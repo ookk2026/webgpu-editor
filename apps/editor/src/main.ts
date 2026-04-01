@@ -270,6 +270,8 @@ class Editor {
     if (obj) {
       this.transformControls.attach(obj);
       this.transformControls.visible = true;
+      this.transformControls.setSize(1.5); // Make handles larger
+      console.log('[Editor] Attached TransformControls to', obj.name || obj.type);
     } else {
       this.transformControls.detach();
       this.transformControls.visible = false;
@@ -442,10 +444,22 @@ class Editor {
       
       const icon = this.getObjectIcon(child);
       const name = child.name || child.type;
+      const isVisible = child.visible;
       
-      item.innerHTML = `<span>${icon}</span><span>${name}</span>`;
+      item.innerHTML = `
+        <span class="tree-icon">${icon}</span>
+        <span class="tree-name">${name}</span>
+        <span class="tree-visibility ${isVisible ? 'visible' : 'hidden'}" title="Toggle visibility"></span>
+      `;
       
-      item.addEventListener('click', () => {
+      // Selection click
+      item.addEventListener('click', (e) => {
+        // Don't select if clicking visibility toggle
+        if ((e.target as HTMLElement).classList.contains('tree-visibility')) {
+          child.visible = !child.visible;
+          this.refreshSceneTree();
+          return;
+        }
         this.selectObject(child);
       });
       
@@ -465,11 +479,14 @@ class Editor {
   private shouldShowInTree(obj: THREE.Object3D): boolean {
     // Skip helpers and controls
     if (obj instanceof THREE.GridHelper) return false;
+    if (obj instanceof THREE.CameraHelper) return false;
     if (obj === this.transformControls) return false;
-    if (obj instanceof THREE.Light && !(obj instanceof THREE.Mesh)) return true; // Show lights
     
-    // Show meshes and groups
-    return obj instanceof THREE.Mesh || obj instanceof THREE.Group || obj instanceof THREE.Light;
+    // Hide camera visualization meshes (they have '摄像机模型' in name)
+    if (obj.name === '摄像机模型') return false;
+    
+    // Show lights, meshes and groups
+    return obj instanceof THREE.Light || obj instanceof THREE.Mesh || obj instanceof THREE.Group || obj instanceof THREE.Camera;
   }
 
   private getObjectIcon(obj: THREE.Object3D): string {
