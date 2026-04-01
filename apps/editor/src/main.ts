@@ -585,9 +585,8 @@ class Editor {
         target = target.parent;
       }
       this.selectObject(target);
-    } else {
-      this.selectObject(null);
     }
+    // 点击空白处不取消选择，保持当前选中状态
   }
 
   private isDirectionalLightHelper(obj: Object3D): boolean {
@@ -907,13 +906,26 @@ class Editor {
   }
 
   private updatePropertyInputs(): void {
+    const propertiesContent = document.getElementById('properties');
+    
     if (!this.state.selectedObject) {
-      const propertiesContent = document.getElementById('properties');
       const noSelection = document.getElementById('no-selection');
-      if (propertiesContent) propertiesContent.style.display = 'none';
+      if (propertiesContent) propertiesContent.style.display = 'block';
       if (noSelection) noSelection.style.display = 'block';
+      // 隐藏所有属性面板
+      const transformProperties = document.getElementById('transform-properties');
+      const lightProperties = document.getElementById('light-properties');
+      const materialProperties = document.getElementById('material-properties');
+      const cameraProperties = document.getElementById('camera-properties');
+      if (transformProperties) transformProperties.style.display = 'none';
+      if (lightProperties) lightProperties.style.display = 'none';
+      if (materialProperties) materialProperties.style.display = 'none';
+      if (cameraProperties) cameraProperties.style.display = 'none';
       return;
     }
+
+    // 显示属性容器
+    if (propertiesContent) propertiesContent.style.display = 'block';
 
     const noSelection = document.getElementById('no-selection');
     if (noSelection) noSelection.style.display = 'none';
@@ -1290,7 +1302,8 @@ class Editor {
     if (!this.sceneManager) return;
 
     const mesh = this.sceneManager.createPrimitive(type);
-    mesh.position.set(0, 1, 0);
+    // 新建物体默认在原点 (0, 0, 0)
+    mesh.position.set(0, 0, 0);
 
     const command = new AddObjectCommand(this.sceneManager, mesh);
     this.commandManager.execute(command);
