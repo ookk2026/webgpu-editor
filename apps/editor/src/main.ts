@@ -32,6 +32,7 @@ import {
   RectAreaLight,
   PerspectiveCamera,
   OrthographicCamera,
+  Camera,
   ConeGeometry,
   BoxGeometry,
   BufferGeometry,
@@ -51,6 +52,7 @@ interface EditorState {
   selectedObject: Object3D | null;
   transformMode: 'translate' | 'rotate' | 'scale';
   space: 'local' | 'world';
+  transformDragging: boolean;
 }
 
 // 场景树筛选状态
@@ -62,7 +64,7 @@ interface TreeFilterState {
 }
 
 class Editor {
-  private renderer: Renderer;
+  private renderer!: Renderer;
   private sceneManager: SceneManager | null = null;
   private orbitControls: OrbitControls | null = null;
   private transformControls: TransformControls | null = null;
@@ -74,7 +76,8 @@ class Editor {
   private state: EditorState = {
     selectedObject: null,
     transformMode: 'translate',
-    space: 'local'
+    space: 'local',
+    transformDragging: false
   };
 
   // 场景树筛选状态（默认全部显示）
@@ -159,8 +162,10 @@ class Editor {
       // 设置变换控制器
       this.transformControls = new TransformControls(camera, this.renderer.getCanvas());
       this.transformControls.addEventListener('dragging-changed', (e) => {
+        const isDragging = Boolean(e.value);
+        this.state.transformDragging = isDragging;
         if (this.orbitControls) {
-          this.orbitControls.enabled = !e.value;
+          this.orbitControls.enabled = !isDragging;
         }
       });
 
@@ -537,6 +542,20 @@ class Editor {
     this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
+    // 延迟执行选择逻辑，让TransformControls先处理事件
+    setTimeout(() => {
+      this.handleSelectionAfterTransformControls();
+    }, 0);
+  }
+
+  private handleSelectionAfterTransformControls(): void {
+    if (!this.sceneManager) return;
+
+    // 如果TransformControls正在拖拽，忽略此次选择
+    if (this.state.transformDragging) {
+      return;
+    }
+
     this.raycaster.setFromCamera(this.mouse, this.sceneManager.getCamera());
 
     const intersects = this.raycaster.intersectObjects(
@@ -544,9 +563,13 @@ class Editor {
       true
     );
 
-    // 过滤掉辅助对象
+    // 检查是否点击了TransformControls手柄 - 如果是则忽略此点击
+    if (intersects.length > 0 && this.isTransformControlsChild(intersects[0].object)) {
+      return; // 点击了变换控制手柄，保持当前选择不变
+    }
+
+    // 过滤掉其他辅助对象
     const validIntersects = intersects.filter(i => 
-      !this.isTransformControlsChild(i.object) &&
       !this.isGridHelperChild(i.object) &&
       !this.isDirectionalLightHelper(i.object)
     );
@@ -579,10 +602,13 @@ class Editor {
 
     // 更新变换控制器
     if (this.transformControls) {
-      if (obj && this.transformControls.visible !== false) {
+      if (obj) {
+        this.transformControls.visible = true;
+        this.transformControls.enabled = true;
         this.transformControls.attach(obj);
       } else {
         this.transformControls.detach();
+        this.transformControls.visible = false;
       }
     }
 
@@ -632,6 +658,7 @@ class Editor {
     this.setupTransformInputs();
     this.setupLightPropertyInputs();
     this.setupMaterialPropertyInputs();
+    this.setupCameraPropertyInputs();
   }
 
   private setupTransformInputs(): void {
@@ -641,57 +668,266 @@ class Editor {
       'scale-x', 'scale-y', 'scale-z'
     ];
 
+    // 存储变换前的状态
+    let oldPosition = new Vector3();
+    let oldRotation = new Euler();
+    let oldScale = new Vector3();
+
     inputs.forEach(id => {
       const input = document.getElementById(id) as HTMLInputElement;
       if (!input) return;
 
-      const handler = () => this.updateTransformFromInputs();
-      input.addEventListener('input', handler);
-      input.addEventListener('change', handler);
+      // 开始编辑时记录旧值
+      input.addEventListener('focus', () => {
+        if (this.state.selectedObject) {
+          oldPosition.copy(this.state.selectedObject.position);
+          oldRotation.copy(this.state.selectedObject.rotation);
+          oldScale.copy(this.state.selectedObject.scale);
+        }
+      });
+
+      // 实时更新
+      input.addEventListener('input', () => this.updateTransformFromInputs());
+
+      // 完成编辑时创建撤销命令
+      input.addEventListener('change', () => {
+        if (this.state.selectedObject && this.sceneManager) {
+          const obj = this.state.selectedObject;
+          const cmd = new TransformCommand(
+            obj,
+            oldPosition,
+            oldRotation,
+            oldScale
+          );
+          this.commandManager.execute(cmd);
+          // 更新旧值为当前值，用于下次编辑
+          oldPosition.copy(obj.position);
+          oldRotation.copy(obj.rotation);
+          oldScale.copy(obj.scale);
+        }
+      });
     });
   }
 
   private setupLightPropertyInputs(): void {
-    const inputs = [
-      'light-color', 'light-intensity', 'light-distance', 'light-angle', 'light-penumbra', 'light-decay'
-    ];
+    // 颜色
+    const colorInput = document.getElementById('light-color') as HTMLInputElement;
+    if (colorInput) {
+      colorInput.addEventListener('change', () => this.updateLightFromInputs());
+    }
 
-    inputs.forEach(id => {
-      const input = document.getElementById(id) as HTMLInputElement;
-      if (!input) return;
+    // 强度 - 滑块和数字框同步
+    const intensitySlider = document.getElementById('light-intensity-slider') as HTMLInputElement;
+    const intensityInput = document.getElementById('light-intensity') as HTMLInputElement;
+    if (intensitySlider && intensityInput) {
+      intensitySlider.addEventListener('input', () => {
+        intensityInput.value = intensitySlider.value;
+        this.updateLightFromInputs();
+      });
+      intensityInput.addEventListener('change', () => {
+        intensitySlider.value = intensityInput.value;
+        this.updateLightFromInputs();
+      });
+    }
 
-      const handler = () => this.updateLightFromInputs();
-      input.addEventListener('input', handler);
-      input.addEventListener('change', handler);
-    });
+    // 距离
+    const distanceSlider = document.getElementById('light-distance-slider') as HTMLInputElement;
+    const distanceInput = document.getElementById('light-distance') as HTMLInputElement;
+    if (distanceSlider && distanceInput) {
+      distanceSlider.addEventListener('input', () => {
+        distanceInput.value = distanceSlider.value;
+        this.updateLightFromInputs();
+      });
+      distanceInput.addEventListener('change', () => {
+        distanceSlider.value = distanceInput.value;
+        this.updateLightFromInputs();
+      });
+    }
+
+    // 角度
+    const angleSlider = document.getElementById('light-angle-slider') as HTMLInputElement;
+    const angleInput = document.getElementById('light-angle') as HTMLInputElement;
+    if (angleSlider && angleInput) {
+      angleSlider.addEventListener('input', () => {
+        angleInput.value = angleSlider.value;
+        this.updateLightFromInputs();
+      });
+      angleInput.addEventListener('change', () => {
+        angleSlider.value = angleInput.value;
+        this.updateLightFromInputs();
+      });
+    }
+
+    // 半影
+    const penumbraSlider = document.getElementById('light-penumbra-slider') as HTMLInputElement;
+    const penumbraInput = document.getElementById('light-penumbra') as HTMLInputElement;
+    if (penumbraSlider && penumbraInput) {
+      penumbraSlider.addEventListener('input', () => {
+        penumbraInput.value = penumbraSlider.value;
+        this.updateLightFromInputs();
+      });
+      penumbraInput.addEventListener('change', () => {
+        penumbraSlider.value = penumbraInput.value;
+        this.updateLightFromInputs();
+      });
+    }
+
+    // 衰减
+    const decaySlider = document.getElementById('light-decay-slider') as HTMLInputElement;
+    const decayInput = document.getElementById('light-decay') as HTMLInputElement;
+    if (decaySlider && decayInput) {
+      decaySlider.addEventListener('input', () => {
+        decayInput.value = decaySlider.value;
+        this.updateLightFromInputs();
+      });
+      decayInput.addEventListener('change', () => {
+        decaySlider.value = decayInput.value;
+        this.updateLightFromInputs();
+      });
+    }
   }
 
   private setupMaterialPropertyInputs(): void {
-    const inputs = [
-      'mat-color', 'mat-metalness', 'mat-roughness', 'mat-emissive'
-    ];
+    // 颜色输入
+    const colorInput = document.getElementById('material-color') as HTMLInputElement;
+    if (colorInput) {
+      colorInput.addEventListener('change', () => this.updateMaterialFromInputs());
+    }
 
-    inputs.forEach(id => {
-      const input = document.getElementById(id) as HTMLInputElement;
-      if (!input) return;
+    // 自发光输入
+    const emissiveInput = document.getElementById('material-emissive') as HTMLInputElement;
+    if (emissiveInput) {
+      emissiveInput.addEventListener('change', () => this.updateMaterialFromInputs());
+    }
 
-      input.addEventListener('change', () => this.updateMaterialFromInputs());
-    });
+    // 粗糙度 - 滑块和数字框同步
+    const roughnessSlider = document.getElementById('material-roughness-slider') as HTMLInputElement;
+    const roughnessInput = document.getElementById('material-roughness') as HTMLInputElement;
+    if (roughnessSlider && roughnessInput) {
+      roughnessSlider.addEventListener('input', () => {
+        roughnessInput.value = roughnessSlider.value;
+        this.updateMaterialFromInputs();
+      });
+      roughnessInput.addEventListener('change', () => {
+        roughnessSlider.value = roughnessInput.value;
+        this.updateMaterialFromInputs();
+      });
+    }
+
+    // 金属度 - 滑块和数字框同步
+    const metalnessSlider = document.getElementById('material-metalness-slider') as HTMLInputElement;
+    const metalnessInput = document.getElementById('material-metalness') as HTMLInputElement;
+    if (metalnessSlider && metalnessInput) {
+      metalnessSlider.addEventListener('input', () => {
+        metalnessInput.value = metalnessSlider.value;
+        this.updateMaterialFromInputs();
+      });
+      metalnessInput.addEventListener('change', () => {
+        metalnessSlider.value = metalnessInput.value;
+        this.updateMaterialFromInputs();
+      });
+    }
+
+    // 不透明度
+    const opacitySlider = document.getElementById('material-opacity-slider') as HTMLInputElement;
+    const opacityInput = document.getElementById('material-opacity') as HTMLInputElement;
+    if (opacitySlider && opacityInput) {
+      opacitySlider.addEventListener('input', () => {
+        opacityInput.value = opacitySlider.value;
+        this.updateMaterialFromInputs();
+      });
+      opacityInput.addEventListener('change', () => {
+        opacitySlider.value = opacityInput.value;
+        this.updateMaterialFromInputs();
+      });
+    }
+
+    // 透明开关
+    const transparentCheck = document.getElementById('material-transparent') as HTMLInputElement;
+    if (transparentCheck) {
+      transparentCheck.addEventListener('change', () => this.updateMaterialFromInputs());
+    }
+
+    // 线框开关
+    const wireframeCheck = document.getElementById('material-wireframe') as HTMLInputElement;
+    if (wireframeCheck) {
+      wireframeCheck.addEventListener('change', () => this.updateMaterialFromInputs());
+    }
+
+    // 清漆层
+    const clearcoatSlider = document.getElementById('material-clearcoat-slider') as HTMLInputElement;
+    const clearcoatInput = document.getElementById('material-clearcoat') as HTMLInputElement;
+    if (clearcoatSlider && clearcoatInput) {
+      clearcoatSlider.addEventListener('input', () => {
+        clearcoatInput.value = clearcoatSlider.value;
+        this.updateMaterialFromInputs();
+      });
+      clearcoatInput.addEventListener('change', () => {
+        clearcoatSlider.value = clearcoatInput.value;
+        this.updateMaterialFromInputs();
+      });
+    }
+  }
+
+  private setupCameraPropertyInputs(): void {
+    // FOV
+    const fovSlider = document.getElementById('camera-fov-slider') as HTMLInputElement;
+    const fovInput = document.getElementById('camera-fov') as HTMLInputElement;
+    if (fovSlider && fovInput) {
+      fovSlider.addEventListener('input', () => {
+        fovInput.value = fovSlider.value;
+        this.updateCameraFromInputs();
+      });
+      fovInput.addEventListener('change', () => {
+        fovSlider.value = fovInput.value;
+        this.updateCameraFromInputs();
+      });
+    }
+
+    // Near/Far
+    const nearInput = document.getElementById('camera-near') as HTMLInputElement;
+    const farInput = document.getElementById('camera-far') as HTMLInputElement;
+    if (nearInput) nearInput.addEventListener('change', () => this.updateCameraFromInputs());
+    if (farInput) farInput.addEventListener('change', () => this.updateCameraFromInputs());
+  }
+
+  private updateCameraFromInputs(): void {
+    const camera = this.sceneManager?.getCamera();
+    if (!camera || !(camera instanceof PerspectiveCamera)) return;
+
+    const fovInput = document.getElementById('camera-fov') as HTMLInputElement;
+    const nearInput = document.getElementById('camera-near') as HTMLInputElement;
+    const farInput = document.getElementById('camera-far') as HTMLInputElement;
+
+    if (fovInput) camera.fov = parseFloat(fovInput.value) || 50;
+    if (nearInput) camera.near = parseFloat(nearInput.value) || 0.1;
+    if (farInput) camera.far = parseFloat(farInput.value) || 1000;
+
+    camera.updateProjectionMatrix();
   }
 
   private updatePropertyInputs(): void {
     if (!this.state.selectedObject) {
-      const propertiesContent = document.getElementById('properties-content');
+      const propertiesContent = document.getElementById('properties');
       const noSelection = document.getElementById('no-selection');
       if (propertiesContent) propertiesContent.style.display = 'none';
       if (noSelection) noSelection.style.display = 'block';
       return;
     }
 
-    const propertiesContent = document.getElementById('properties-content');
     const noSelection = document.getElementById('no-selection');
-    if (propertiesContent) propertiesContent.style.display = 'block';
     if (noSelection) noSelection.style.display = 'none';
+
+    // 显示属性内容
+    const transformProperties = document.getElementById('transform-properties');
+    const lightProperties = document.getElementById('light-properties');
+    const materialProperties = document.getElementById('material-properties');
+    const cameraProperties = document.getElementById('camera-properties');
+
+    if (transformProperties) transformProperties.style.display = 'block';
+    if (lightProperties) lightProperties.style.display = 'none';
+    if (materialProperties) materialProperties.style.display = 'none';
+    if (cameraProperties) cameraProperties.style.display = 'none';
 
     const obj = this.state.selectedObject;
 
@@ -700,12 +936,20 @@ class Editor {
 
     // 更新灯光属性
     if (obj instanceof Light) {
+      if (lightProperties) lightProperties.style.display = 'block';
       this.updateLightInputs(obj);
     }
 
     // 更新材质属性
     if (obj instanceof Mesh) {
+      if (materialProperties) materialProperties.style.display = 'block';
       this.updateMaterialInputs(obj);
+    }
+
+    // 更新摄像机属性
+    if (obj instanceof Camera) {
+      if (cameraProperties) cameraProperties.style.display = 'block';
+      this.updateCameraInputs(obj);
     }
 
     // 更新对象名称
@@ -756,23 +1000,52 @@ class Editor {
 
     const colorInput = document.getElementById('light-color') as HTMLInputElement;
     const intensityInput = document.getElementById('light-intensity') as HTMLInputElement;
+    const intensitySlider = document.getElementById('light-intensity-slider') as HTMLInputElement;
 
     if (colorInput) colorInput.value = '#' + light.color.getHexString();
-    if (intensityInput) intensityInput.value = light.intensity.toString();
+    if (intensityInput) {
+      intensityInput.value = light.intensity.toFixed(1);
+      if (intensitySlider) intensitySlider.value = light.intensity.toFixed(1);
+    }
 
-    // 特定灯光类型的属性
+    // 特定灯光类型的属性 - 显示/隐藏对应行
+    const distanceRow = document.getElementById('light-distance-row');
+    const angleRow = document.getElementById('light-angle-row');
+    const penumbraRow = document.getElementById('light-penumbra-row');
+    const decayRow = document.getElementById('light-decay-row');
+
+    // 默认隐藏特定属性
+    if (distanceRow) distanceRow.style.display = 'none';
+    if (angleRow) angleRow.style.display = 'none';
+    if (penumbraRow) penumbraRow.style.display = 'none';
+    if (decayRow) decayRow.style.display = 'none';
+
     if (light instanceof PointLight || light instanceof SpotLight) {
-      const distanceInput = document.getElementById('light-distance') as HTMLInputElement;
-      const decayInput = document.getElementById('light-decay') as HTMLInputElement;
-      if (distanceInput) distanceInput.value = (light.distance || 0).toString();
-      if (decayInput) decayInput.value = (light.decay || 1).toString();
+      if (distanceRow) {
+        distanceRow.style.display = 'flex';
+        const distanceInput = document.getElementById('light-distance') as HTMLInputElement;
+        const distanceSlider = document.getElementById('light-distance-slider') as HTMLInputElement;
+        if (distanceInput) distanceInput.value = (light.distance || 0).toString();
+        if (distanceSlider) distanceSlider.value = (light.distance || 0).toString();
+      }
     }
 
     if (light instanceof SpotLight) {
-      const angleInput = document.getElementById('light-angle') as HTMLInputElement;
-      const penumbraInput = document.getElementById('light-penumbra') as HTMLInputElement;
-      if (angleInput) angleInput.value = MathUtils.radToDeg(light.angle).toFixed(2);
-      if (penumbraInput) penumbraInput.value = light.penumbra.toString();
+      if (angleRow) {
+        angleRow.style.display = 'flex';
+        const angleInput = document.getElementById('light-angle') as HTMLInputElement;
+        const angleSlider = document.getElementById('light-angle-slider') as HTMLInputElement;
+        const angleDeg = MathUtils.radToDeg(light.angle);
+        if (angleInput) angleInput.value = angleDeg.toFixed(0);
+        if (angleSlider) angleSlider.value = angleDeg.toFixed(0);
+      }
+      if (penumbraRow) {
+        penumbraRow.style.display = 'flex';
+        const penumbraInput = document.getElementById('light-penumbra') as HTMLInputElement;
+        const penumbraSlider = document.getElementById('light-penumbra-slider') as HTMLInputElement;
+        if (penumbraInput) penumbraInput.value = light.penumbra.toFixed(2);
+        if (penumbraSlider) penumbraSlider.value = light.penumbra.toFixed(2);
+      }
     }
   }
 
@@ -785,22 +1058,75 @@ class Editor {
     const material = mesh.material as any;
     if (!material) return;
 
-    const colorInput = document.getElementById('mat-color') as HTMLInputElement;
-    const metalnessInput = document.getElementById('mat-metalness') as HTMLInputElement;
-    const roughnessInput = document.getElementById('mat-roughness') as HTMLInputElement;
-    const emissiveInput = document.getElementById('mat-emissive') as HTMLInputElement;
+    const colorInput = document.getElementById('material-color') as HTMLInputElement;
+    const metalnessInput = document.getElementById('material-metalness') as HTMLInputElement;
+    const metalnessSlider = document.getElementById('material-metalness-slider') as HTMLInputElement;
+    const roughnessInput = document.getElementById('material-roughness') as HTMLInputElement;
+    const roughnessSlider = document.getElementById('material-roughness-slider') as HTMLInputElement;
+    const emissiveInput = document.getElementById('material-emissive') as HTMLInputElement;
+    const opacityInput = document.getElementById('material-opacity') as HTMLInputElement;
+    const opacitySlider = document.getElementById('material-opacity-slider') as HTMLInputElement;
+    const transparentCheck = document.getElementById('material-transparent') as HTMLInputElement;
+    const wireframeCheck = document.getElementById('material-wireframe') as HTMLInputElement;
+    const clearcoatInput = document.getElementById('material-clearcoat') as HTMLInputElement;
+    const clearcoatSlider = document.getElementById('material-clearcoat-slider') as HTMLInputElement;
 
     if (colorInput && material.color) {
       colorInput.value = '#' + material.color.getHexString();
     }
     if (metalnessInput && material.metalness !== undefined) {
       metalnessInput.value = material.metalness.toFixed(2);
+      if (metalnessSlider) metalnessSlider.value = material.metalness.toFixed(2);
     }
     if (roughnessInput && material.roughness !== undefined) {
       roughnessInput.value = material.roughness.toFixed(2);
+      if (roughnessSlider) roughnessSlider.value = material.roughness.toFixed(2);
     }
     if (emissiveInput && material.emissive) {
       emissiveInput.value = '#' + material.emissive.getHexString();
+    }
+    if (opacityInput && material.opacity !== undefined) {
+      opacityInput.value = material.opacity.toFixed(2);
+      if (opacitySlider) opacitySlider.value = material.opacity.toFixed(2);
+    }
+    if (transparentCheck && material.transparent !== undefined) {
+      transparentCheck.checked = material.transparent;
+    }
+    if (wireframeCheck && material.wireframe !== undefined) {
+      wireframeCheck.checked = material.wireframe;
+    }
+    if (clearcoatInput && material.clearcoat !== undefined) {
+      clearcoatInput.value = material.clearcoat.toFixed(2);
+      if (clearcoatSlider) clearcoatSlider.value = material.clearcoat.toFixed(2);
+    }
+
+    // 显示/隐藏清漆层（仅物理材质）
+    const clearcoatRow = document.getElementById('material-clearcoat-row');
+    if (clearcoatRow) {
+      clearcoatRow.style.display = material.clearcoat !== undefined ? 'flex' : 'none';
+    }
+  }
+
+  private updateCameraInputs(camera: Camera): void {
+    const container = document.getElementById('camera-properties');
+    if (container) {
+      container.style.display = 'block';
+    }
+
+    const fovInput = document.getElementById('camera-fov') as HTMLInputElement;
+    const fovSlider = document.getElementById('camera-fov-slider') as HTMLInputElement;
+    const nearInput = document.getElementById('camera-near') as HTMLInputElement;
+    const farInput = document.getElementById('camera-far') as HTMLInputElement;
+    const typeLabel = document.getElementById('camera-type');
+
+    if (camera instanceof PerspectiveCamera) {
+      if (typeLabel) typeLabel.textContent = '透视相机';
+      if (fovInput) {
+        fovInput.value = camera.fov.toFixed(0);
+        if (fovSlider) fovSlider.value = camera.fov.toFixed(0);
+      }
+      if (nearInput) nearInput.value = camera.near.toFixed(2);
+      if (farInput) farInput.value = camera.far.toFixed(1);
     }
   }
 
@@ -853,9 +1179,7 @@ class Editor {
 
     if (light instanceof PointLight || light instanceof SpotLight) {
       const distanceInput = document.getElementById('light-distance') as HTMLInputElement;
-      const decayInput = document.getElementById('light-decay') as HTMLInputElement;
       if (distanceInput) light.distance = parseFloat(distanceInput.value) || 0;
-      if (decayInput) light.decay = parseFloat(decayInput.value) || 1;
     }
 
     if (light instanceof SpotLight) {
@@ -873,10 +1197,14 @@ class Editor {
     const material = mesh.material as any;
     if (!material) return;
 
-    const colorInput = document.getElementById('mat-color') as HTMLInputElement;
-    const metalnessInput = document.getElementById('mat-metalness') as HTMLInputElement;
-    const roughnessInput = document.getElementById('mat-roughness') as HTMLInputElement;
-    const emissiveInput = document.getElementById('mat-emissive') as HTMLInputElement;
+    const colorInput = document.getElementById('material-color') as HTMLInputElement;
+    const metalnessInput = document.getElementById('material-metalness') as HTMLInputElement;
+    const roughnessInput = document.getElementById('material-roughness') as HTMLInputElement;
+    const emissiveInput = document.getElementById('material-emissive') as HTMLInputElement;
+    const opacityInput = document.getElementById('material-opacity') as HTMLInputElement;
+    const transparentCheck = document.getElementById('material-transparent') as HTMLInputElement;
+    const wireframeCheck = document.getElementById('material-wireframe') as HTMLInputElement;
+    const clearcoatInput = document.getElementById('material-clearcoat') as HTMLInputElement;
 
     if (colorInput && material.color) {
       material.color.set(colorInput.value);
@@ -890,6 +1218,21 @@ class Editor {
     if (emissiveInput && material.emissive) {
       material.emissive.set(emissiveInput.value);
     }
+    if (opacityInput && material.opacity !== undefined) {
+      material.opacity = parseFloat(opacityInput.value) || 1;
+    }
+    if (transparentCheck && material.transparent !== undefined) {
+      material.transparent = transparentCheck.checked;
+    }
+    if (wireframeCheck && material.wireframe !== undefined) {
+      material.wireframe = wireframeCheck.checked;
+    }
+    if (clearcoatInput && material.clearcoat !== undefined) {
+      material.clearcoat = parseFloat(clearcoatInput.value) || 0;
+    }
+
+    // 标记材质需要更新
+    material.needsUpdate = true;
   }
 
   private setupDraggableToolbars(): void {
@@ -905,10 +1248,11 @@ class Editor {
       let startLeft = 0;
       let startTop = 0;
 
-      const onMouseDown = (e: MouseEvent) => {
+      const onMouseDown = (e: Event) => {
+        const me = e as MouseEvent;
         isDragging = true;
-        startX = e.clientX;
-        startY = e.clientY;
+        startX = me.clientX;
+        startY = me.clientY;
         const rect = (toolbar as HTMLElement).getBoundingClientRect();
         startLeft = rect.left;
         startTop = rect.top;
@@ -917,10 +1261,11 @@ class Editor {
         (toolbar as HTMLElement).style.top = startTop + 'px';
       };
 
-      const onMouseMove = (e: MouseEvent) => {
+      const onMouseMove = (e: Event) => {
         if (!isDragging) return;
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
+        const me = e as MouseEvent;
+        const dx = me.clientX - startX;
+        const dy = me.clientY - startY;
         (toolbar as HTMLElement).style.left = (startLeft + dx) + 'px';
         (toolbar as HTMLElement).style.top = (startTop + dy) + 'px';
       };
@@ -972,11 +1317,13 @@ class Editor {
         light = new PointLight(0xffffff, 1, 100);
         light.position.set(0, 5, 0);
         break;
-      case 'spot':
-        light = new SpotLight(0xffffff, 1);
-        light.position.set(0, 10, 0);
-        light.target.position.set(0, 0, 0);
+      case 'spot': {
+        const spotLight = new SpotLight(0xffffff, 1);
+        spotLight.position.set(0, 10, 0);
+        spotLight.target.position.set(0, 0, 0);
+        light = spotLight;
         break;
+      }
       case 'hemisphere':
         light = new HemisphereLight(0xffffff, 0x444444, 1);
         break;
@@ -1067,9 +1414,8 @@ class Editor {
     if (!this.sceneManager) return;
 
     try {
-      const serializer = new SceneSerializer();
-      const data = serializer.serialize(this.sceneManager.getScene());
-      const json = JSON.stringify(data, null, 2);
+      const sceneData = this.sceneManager.toJSON();
+      const json = SceneSerializer.serialize(sceneData, { name: 'My Scene' }, { prettyPrint: true });
       
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -1112,11 +1458,13 @@ class Editor {
       const hasChildren = obj.children.some(c => this.shouldShowObject(c));
       const isCollapsed = this.collapsedObjects.has(obj.uuid);
 
+      const isVisible = obj.visible;
       item.innerHTML = `
         <span class="tree-toggle ${hasChildren ? (isCollapsed ? 'collapsed' : 'expanded') : ''}" 
               style="visibility: ${hasChildren ? 'visible' : 'hidden'}">▶</span>
         <span class="tree-icon">${icon}</span>
         <span class="tree-label">${obj.name || obj.type}</span>
+        <span class="tree-visibility ${isVisible ? 'visible' : 'hidden'}" title="点击切换显示/隐藏"></span>
       `;
 
       // 点击选中
@@ -1135,6 +1483,16 @@ class Editor {
           } else {
             this.collapsedObjects.add(obj.uuid);
           }
+          this.refreshSceneTree();
+        });
+      }
+
+      // 显示/隐藏切换
+      const visibilityToggle = item.querySelector('.tree-visibility');
+      if (visibilityToggle) {
+        visibilityToggle.addEventListener('click', (e) => {
+          e.stopPropagation();
+          obj.visible = !obj.visible;
           this.refreshSceneTree();
         });
       }
@@ -1421,7 +1779,7 @@ class Editor {
 
     gizmo.addEventListener('dragging-changed', (e) => {
       if (this.orbitControls) {
-        this.orbitControls.enabled = !e.value;
+        this.orbitControls.enabled = !Boolean(e.value);
       }
     });
   }
@@ -1530,7 +1888,7 @@ class Editor {
 
     gizmo.addEventListener('dragging-changed', (e) => {
       if (this.orbitControls) {
-        this.orbitControls.enabled = !e.value;
+        this.orbitControls.enabled = !Boolean(e.value);
       }
     });
   }
@@ -1629,7 +1987,7 @@ class Editor {
 
     // 清理场景
     if (this.sceneManager) {
-      this.sceneManager.dispose();
+      this.sceneManager.clear();
     }
 
     // 清理渲染器

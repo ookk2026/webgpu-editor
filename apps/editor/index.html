@@ -96,7 +96,7 @@
     #scene-tree {
       padding: 8px;
     }
-    .tree-item {
+    .scene-tree-item {
       padding: 4px 8px;
       cursor: pointer;
       border-radius: 3px;
@@ -104,18 +104,18 @@
       align-items: center;
       gap: 6px;
     }
-    .tree-item:hover {
+    .scene-tree-item:hover {
       background: #2a2d2e;
     }
-    .tree-item.selected {
+    .scene-tree-item.selected {
       background: #094771;
     }
-    .tree-item .icon {
+    .scene-tree-item .icon {
       width: 16px;
       height: 16px;
       opacity: 0.7;
     }
-    .tree-item .visibility {
+    .scene-tree-item .tree-visibility {
       margin-left: auto;
       width: 8px;
       height: 8px;
@@ -123,19 +123,20 @@
       background: #666;
       cursor: pointer;
       transition: all 0.2s;
+      flex-shrink: 0;
     }
-    .tree-item .visibility:hover {
-      transform: scale(1.2);
+    .scene-tree-item .tree-visibility:hover {
+      transform: scale(1.3);
     }
-    .tree-item .visibility.visible {
+    .scene-tree-item .tree-visibility.visible {
       background: #4caf50;
       box-shadow: 0 0 4px #4caf50;
     }
-    .tree-item .visibility.hidden {
+    .scene-tree-item .tree-visibility.hidden {
       background: #666;
-      opacity: 0.5;
+      opacity: 0.3;
     }
-    .tree-item .expand-icon {
+    .scene-tree-item .expand-icon {
       width: 16px;
       height: 16px;
       display: flex;
@@ -145,10 +146,10 @@
       font-size: 10px;
       transition: transform 0.2s;
     }
-    .tree-item .expand-icon.collapsed {
+    .scene-tree-item .expand-icon.collapsed {
       transform: rotate(-90deg);
     }
-    .tree-item .expand-icon.no-children {
+    .scene-tree-item .expand-icon.no-children {
       opacity: 0;
       pointer-events: none;
     }

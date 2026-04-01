@@ -218,6 +218,13 @@ export class Renderer {
   }
 
   /**
+   * 设置尺寸
+   */
+  setSize(width: number, height: number): void {
+    this.renderer.setSize(width, height);
+  }
+
+  /**
    * 销毁渲染器
    */
   dispose(): void {
