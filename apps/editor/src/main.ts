@@ -1,509 +1,178 @@
-import {
-  Renderer,
-  SceneManager,
-  SceneSerializer,
-  ModelImporter,
-  MaterialEditor,
-  CommandManager,
-  AddObjectCommand,
-  RemoveObjectCommand,
-  TransformCommand,
-  type SceneNodeData
-} from '@webgpu-editor/core';
+import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
-import { 
-  Raycaster, 
-  Vector2, 
-  Vector3,
-  Euler,
-  type Object3D,
-  Mesh,
-  Group,
-  Light,
-  LineSegments,
-  Color,
-  MathUtils,
-  AmbientLight,
-  DirectionalLight,
-  PointLight,
-  SpotLight,
-  HemisphereLight,
-  RectAreaLight,
-  PerspectiveCamera,
-  OrthographicCamera,
-  Camera,
-  ConeGeometry,
-  BoxGeometry,
-  BufferGeometry,
-  BufferAttribute,
-  LineBasicMaterial,
-  Line,
-  MeshBasicMaterial,
-  BoxHelper,
-  GridHelper,
-  CameraHelper,
-  Box3,
-  Material
-} from 'three';
 
-// Editor state
-interface EditorState {
-  selectedObject: Object3D | null;
-  transformMode: 'translate' | 'rotate' | 'scale';
-  space: 'local' | 'world';
-  transformDragging: boolean;
-}
-
-// Scene tree filter state
-interface TreeFilterState {
-  lights: boolean;
-  models: boolean;
-  helpers: boolean;
-  cameras: boolean;
-}
-
+// Minimal Editor Implementation
 class Editor {
-  private renderer!: Renderer;
-  private sceneManager: SceneManager | null = null;
-  private orbitControls: OrbitControls | null = null;
-  private transformControls: TransformControls | null = null;
-  private raycaster = new Raycaster();
-  private mouse = new Vector2();
-  private modelImporter = new ModelImporter();
-  private materialEditor = new MaterialEditor();
+  private scene!: THREE.Scene;
+  private camera!: THREE.PerspectiveCamera;
+  private renderer!: THREE.WebGLRenderer;
+  private orbitControls!: OrbitControls;
+  private transformControls!: TransformControls;
+  private raycaster = new THREE.Raycaster();
+  private mouse = new THREE.Vector2();
+  private gridHelper!: THREE.GridHelper;
   
-  private state: EditorState = {
-    selectedObject: null,
-    transformMode: 'translate',
-    space: 'local',
-    transformDragging: false
-  };
-
-  // Scene tree filter state (all shown by default)
-  private treeFilter: TreeFilterState = {
-    lights: true,
-    models: true,
-    helpers: true,
-    cameras: true
-  };
-
-  // Command manager (undo/redo)
-  private commandManager = new CommandManager({ debug: false });
+  // State
+  private selectedObject: THREE.Object3D | null = null;
+  private transformMode: 'translate' | 'rotate' | 'scale' = 'translate';
+  private isDragging = false;
   
-  // Scene tree event listeners bound flag
-  private treeEventListenersBound = false;
-  
-  // Scene tree collapse state persistence
-  private collapsedObjects: Set<string> = new Set();
-  
-  // Directional light helper mapping
-  private directionalLightHelpers: Map<string, { helper: Object3D; gizmo: TransformControls }> = new Map();
-  
-  // Selected object wireframe bounding box
-  private selectionBox: BoxHelper | null = null;
-  
-  // Property panel state cache
-  private propertyPanelState: Map<string, Record<string, any>> = new Map();
-  
-  // Store all event listener cleanup functions
-  private eventListeners: (() => void)[] = [];
-
+  // DOM Elements
   private viewport: HTMLElement;
-  private overlay: HTMLElement;
-  private statusFPS: HTMLElement;
-  private statusObjects: HTMLElement;
-  private statusRender: HTMLElement;
-  
-  // Spotlight target helper
-  private spotLightTargetHelper: { mesh: Mesh; gizmo: TransformControls; line: Line } | null = null;
+  private sceneTree: HTMLElement;
+  private propertiesPanel: HTMLElement;
+  private noSelectionMsg: HTMLElement;
+  private transformProps: HTMLElement;
 
   constructor() {
     this.viewport = document.getElementById('viewport')!;
-    this.overlay = document.getElementById('overlay')!;
-    this.statusFPS = document.getElementById('status-fps')!;
-    this.statusObjects = document.getElementById('status-objects')!;
-    this.statusRender = document.getElementById('status-render')!;
+    this.sceneTree = document.getElementById('scene-tree')!;
+    this.propertiesPanel = document.getElementById('properties')!;
+    this.noSelectionMsg = document.getElementById('no-selection')!;
+    this.transformProps = document.getElementById('transform-properties')!;
 
-    this.loadPersistedState();
     this.init();
     this.setupUI();
     this.setupEventListeners();
-    this.setupGlobalKeyboardListeners();
+    this.animate();
   }
 
-  private async init(): Promise<void> {
-    try {
-      // Create canvas
-      const canvas = document.createElement('canvas');
-      this.viewport.appendChild(canvas);
-      console.log('[Editor] Canvas created');
-      
-      // Initialize renderer
-      this.renderer = new Renderer(canvas);
-      const rendererOk = await this.renderer.init();
-      if (!rendererOk) {
-        throw new Error('Renderer initialization failed');
-      }
-      console.log('[Editor] Renderer initialized');
+  private init(): void {
+    // Scene
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x1e1e1e);
+    this.scene.name = 'Scene';
 
-      // Initialize scene manager
-      this.sceneManager = new SceneManager();
-      this.sceneManager.createDefaultScene();
-      console.log('[Editor] SceneManager initialized');
+    // Camera - positioned to see origin
+    this.camera = new THREE.PerspectiveCamera(
+      50,
+      this.viewport.clientWidth / this.viewport.clientHeight,
+      0.1,
+      1000
+    );
+    this.camera.position.set(5, 5, 10);
+    this.camera.lookAt(0, 0, 0);
 
-      // Setup orbit controls
-      const camera = this.sceneManager.getCamera();
-      this.orbitControls = new OrbitControls(camera, this.renderer.getCanvas());
-      this.orbitControls.enableDamping = true;
-      this.orbitControls.dampingFactor = 0.05;
-      console.log('[Editor] OrbitControls initialized');
+    // Renderer
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer.setSize(this.viewport.clientWidth, this.viewport.clientHeight);
+    this.renderer.setPixelRatio(window.devicePixelRatio);
+    this.viewport.appendChild(this.renderer.domElement);
 
-      // Setup transform controls
-      this.transformControls = new TransformControls(camera, this.renderer.getCanvas());
-      this.transformControls.addEventListener('dragging-changed', (e) => {
-        const isDragging = Boolean(e.value);
-        this.state.transformDragging = isDragging;
-        if (this.orbitControls) {
-          this.orbitControls.enabled = !isDragging;
-        }
-      });
+    // Orbit Controls
+    this.orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.orbitControls.enableDamping = true;
+    this.orbitControls.dampingFactor = 0.05;
+    this.orbitControls.target.set(0, 0, 0);
 
-      this.sceneManager.getScene().add(this.transformControls);
-      console.log('[Editor] TransformControls initialized');
+    // Transform Controls
+    this.transformControls = new TransformControls(this.camera, this.renderer.domElement);
+    this.transformControls.setMode('translate');
+    this.transformControls.setSize(1.2);
+    this.scene.add(this.transformControls);
 
-      // Hide loading overlay
-      this.overlay.classList.add('hidden');
-      console.log('[Editor] Initialization complete');
+    // Grid Helper
+    this.gridHelper = new THREE.GridHelper(20, 20, 0x444444, 0x333333);
+    this.scene.add(this.gridHelper);
 
-      // Start render loop
-      this.animate();
-    } catch (error) {
-      console.error('[Editor] Initialization failed:', error);
-      this.overlay.innerHTML = `<div style="color: red; padding: 20px;">
-        <h3>Initialization Failed</h3>
-        <p>${error instanceof Error ? error.message : 'Unknown error'}</p>
-        <p>Please check browser console for details</p>
-      </div>`;
-    }
+    // Default Lights
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    ambientLight.name = 'Ambient Light';
+    this.scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+    dirLight.position.set(5, 10, 5);
+    dirLight.name = 'Directional Light';
+    this.scene.add(dirLight);
+
+    // Hide loading overlay
+    const overlay = document.getElementById('overlay');
+    if (overlay) overlay.classList.add('hidden');
+
+    console.log('[Editor] Initialized');
   }
 
   private animate(): void {
     requestAnimationFrame(() => this.animate());
-
-    if (!this.sceneManager) return;
-
-    // Update orbit controls
-    if (this.orbitControls) {
-      this.orbitControls.update();
-    }
-
-    // Update directional light helpers
-    this.syncDirectionalLightTargets();
-
-    // Update spotlight target helper position
-    this.updateSpotLightTarget();
-
-    // Update selection box
-    this.updateSelectionBox();
-
-    // Render scene
-    this.renderer.render(this.sceneManager.getScene(), this.sceneManager.getCamera());
-
-    // Update status bar
-    this.updateStatusBar();
-  }
-
-  private updateStatusBar(): void {
-    if (!this.sceneManager) return;
-
-    // Update FPS
-    const info = this.renderer.getInfo();
-    this.statusFPS.textContent = `${Math.round(info.render.frame)} FPS`;
-
-    // Update object count
-    let objectCount = 0;
-    this.sceneManager.getScene().traverse((obj) => {
-      if (obj.type === 'Mesh') objectCount++;
-    });
-    this.statusObjects.textContent = `${objectCount} objects`;
-
-    // Update render info
-    this.statusRender.textContent = `WebGPU`;
+    
+    this.orbitControls.update();
+    this.renderer.render(this.scene, this.camera);
   }
 
   private setupUI(): void {
-    // Setup toolbar buttons
-    this.setupToolbarButtons();
-    
-    // Setup scene tree
+    // Transform mode buttons
+    document.getElementById('tool-translate')?.addEventListener('click', () => {
+      this.setTransformMode('translate');
+    });
+    document.getElementById('tool-rotate')?.addEventListener('click', () => {
+      this.setTransformMode('rotate');
+    });
+    document.getElementById('tool-scale')?.addEventListener('click', () => {
+      this.setTransformMode('scale');
+    });
+
+    // Add cube button
+    document.getElementById('btn-add-cube')?.addEventListener('click', () => {
+      this.addCube();
+    });
+
+    // Add sphere button
+    document.getElementById('btn-add-sphere')?.addEventListener('click', () => {
+      this.addSphere();
+    });
+
+    // Property inputs
+    const inputIds = ['pos-x', 'pos-y', 'pos-z', 'rot-x', 'rot-y', 'rot-z', 'scale-x', 'scale-y', 'scale-z'];
+    inputIds.forEach(id => {
+      const input = document.getElementById(id) as HTMLInputElement;
+      if (input) {
+        input.addEventListener('input', () => this.updateObjectFromInputs());
+      }
+    });
+
+    // Initial scene tree refresh
     this.refreshSceneTree();
-    
-    // Setup property panel
-    this.setupPropertyInputs();
-    
-    // Setup draggable toolbars
-    this.setupDraggableToolbars();
-  }
-
-  private setupToolbarButtons(): void {
-    // Transform mode buttons - HTML uses tool-* IDs
-    const translateBtn = document.getElementById('tool-translate');
-    const rotateBtn = document.getElementById('tool-rotate');
-    const scaleBtn = document.getElementById('tool-scale');
-
-    translateBtn?.addEventListener('click', () => this.setTransformMode('translate'));
-    rotateBtn?.addEventListener('click', () => this.setTransformMode('rotate'));
-    scaleBtn?.addEventListener('click', () => this.setTransformMode('scale'));
-
-    // Space toggle button - HTML uses tool-local
-    const localWorldBtn = document.getElementById('tool-local');
-    localWorldBtn?.addEventListener('click', () => this.toggleSpace());
-
-    // Add primitive buttons
-    const addCubeBtn = document.getElementById('btn-add-cube');
-    const addSphereBtn = document.getElementById('btn-add-sphere');
-
-    addCubeBtn?.addEventListener('click', () => this.addPrimitive('Box'));
-    addSphereBtn?.addEventListener('click', () => this.addPrimitive('Sphere'));
-
-    // Import model button
-    const importBtn = document.getElementById('btn-import-model');
-    importBtn?.addEventListener('click', () => this.importModel());
-
-    // New scene button - HTML uses btn-new
-    const newSceneBtn = document.getElementById('btn-new');
-    newSceneBtn?.addEventListener('click', () => this.newScene());
-
-    // Open scene button
-    const openBtn = document.getElementById('btn-open');
-    openBtn?.addEventListener('click', () => this.openScene());
-
-    // Save scene button
-    const saveBtn = document.getElementById('btn-save');
-    saveBtn?.addEventListener('click', () => this.saveScene());
-
-    // Undo/redo buttons
-    const undoBtn = document.getElementById('btn-undo');
-    const redoBtn = document.getElementById('btn-redo');
-
-    undoBtn?.addEventListener('click', () => this.undo());
-    redoBtn?.addEventListener('click', () => this.redo());
-
-    // Play button
-    const playBtn = document.getElementById('btn-play');
-    playBtn?.addEventListener('click', () => this.togglePlay());
-
-    // Publish button
-    const publishBtn = document.getElementById('btn-publish');
-    publishBtn?.addEventListener('click', () => this.publish());
-
-    // Scene tree filter buttons - HTML uses btn-filter-*
-    const filterLightsBtn = document.getElementById('btn-filter-lights');
-    const filterModelsBtn = document.getElementById('btn-filter-models');
-    const filterHelpersBtn = document.getElementById('btn-filter-helpers');
-    const filterCamerasBtn = document.getElementById('btn-filter-cameras');
-
-    filterLightsBtn?.addEventListener('click', () => {
-      this.treeFilter.lights = !this.treeFilter.lights;
-      filterLightsBtn.classList.toggle('active', this.treeFilter.lights);
-      this.refreshSceneTree();
-    });
-
-    filterModelsBtn?.addEventListener('click', () => {
-      this.treeFilter.models = !this.treeFilter.models;
-      filterModelsBtn.classList.toggle('active', this.treeFilter.models);
-      this.refreshSceneTree();
-    });
-
-    filterHelpersBtn?.addEventListener('click', () => {
-      this.treeFilter.helpers = !this.treeFilter.helpers;
-      filterHelpersBtn.classList.toggle('active', this.treeFilter.helpers);
-      this.refreshSceneTree();
-    });
-
-    filterCamerasBtn?.addEventListener('click', () => {
-      this.treeFilter.cameras = !this.treeFilter.cameras;
-      filterCamerasBtn.classList.toggle('active', this.treeFilter.cameras);
-      this.refreshSceneTree();
-    });
-
-    // Expand/collapse all buttons
-    const expandAllBtn = document.getElementById('btn-expand-all');
-    const collapseAllBtn = document.getElementById('btn-collapse-all');
-
-    expandAllBtn?.addEventListener('click', () => {
-      this.collapsedObjects.clear();
-      this.refreshSceneTree();
-    });
-
-    collapseAllBtn?.addEventListener('click', () => {
-      if (!this.sceneManager) return;
-      this.sceneManager.getScene().traverse((obj) => {
-        if (obj.children.length > 0 && this.shouldShowObject(obj)) {
-          this.collapsedObjects.add(obj.uuid);
-        }
-      });
-      this.refreshSceneTree();
-    });
-
-    // Grid toggle button
-    const toggleGridBtn = document.getElementById('btn-toggle-grid');
-    toggleGridBtn?.addEventListener('click', () => {
-      if (!this.sceneManager) return;
-      const isVisible = this.sceneManager.isGridHelperVisible();
-      this.sceneManager.setGridHelperVisible(!isVisible);
-      toggleGridBtn.classList.toggle('active', !isVisible);
-    });
-
-    // Light add buttons
-    const addAmbientBtn = document.getElementById('btn-add-ambient');
-    const addDirectionalBtn = document.getElementById('btn-add-directional');
-    const addPointBtn = document.getElementById('btn-add-point');
-    const addSpotBtn = document.getElementById('btn-add-spot');
-    const addHemisphereBtn = document.getElementById('btn-add-hemisphere');
-
-    addAmbientBtn?.addEventListener('click', () => this.addLight('ambient'));
-    addDirectionalBtn?.addEventListener('click', () => this.addLight('directional'));
-    addPointBtn?.addEventListener('click', () => this.addLight('point'));
-    addSpotBtn?.addEventListener('click', () => this.addLight('spot'));
-    addHemisphereBtn?.addEventListener('click', () => this.addLight('hemisphere'));
-
-    // Initialize button states
     this.updateToolbarState();
-    
-    // Initialize filter button states
-    filterLightsBtn?.classList.toggle('active', this.treeFilter.lights);
-    filterModelsBtn?.classList.toggle('active', this.treeFilter.models);
-    filterHelpersBtn?.classList.toggle('active', this.treeFilter.helpers);
-    filterCamerasBtn?.classList.toggle('active', this.treeFilter.cameras);
-    
-    // Initialize grid button state
-    if (this.sceneManager) {
-      toggleGridBtn?.classList.toggle('active', this.sceneManager.isGridHelperVisible());
-    }
-  }
-
-  private setTransformMode(mode: 'translate' | 'rotate' | 'scale'): void {
-    this.state.transformMode = mode;
-    if (this.transformControls) {
-      this.transformControls.setMode(mode);
-    }
-    this.updateToolbarState();
-  }
-
-  private setSpace(space: 'local' | 'world'): void {
-    this.state.space = space;
-    if (this.transformControls) {
-      this.transformControls.setSpace(space);
-    }
-    this.updateToolbarState();
-  }
-
-  private toggleSpace(): void {
-    const newSpace = this.state.space === 'local' ? 'world' : 'local';
-    this.setSpace(newSpace);
-  }
-
-  private updateToolbarState(): void {
-    // Update transform mode button states - HTML uses tool-* IDs
-    document.getElementById('tool-translate')?.classList.toggle('active', this.state.transformMode === 'translate');
-    document.getElementById('tool-rotate')?.classList.toggle('active', this.state.transformMode === 'rotate');
-    document.getElementById('tool-scale')?.classList.toggle('active', this.state.transformMode === 'scale');
   }
 
   private setupEventListeners(): void {
-    const canvas = this.renderer?.getCanvas();
-    if (!canvas) return;
+    const canvas = this.renderer.domElement;
 
-    // Prevent text selection during drag
-    canvas.style.userSelect = 'none';
-    canvas.style.webkitUserSelect = 'none';
+    // CRITICAL: TransformControls events must be set up BEFORE pointer events
+    // This ensures TransformControls can intercept handle clicks before we do raycasting
+    
+    // TransformControls dragging state
+    this.transformControls.addEventListener('dragging-changed', (e: any) => {
+      this.isDragging = e.value as boolean;
+      this.orbitControls.enabled = !this.isDragging;
+      console.log('[Editor] Dragging:', this.isDragging);
+    });
 
-    // Pointer down for selection - use capture: false to let TransformControls handle first
-    const pointerDown = (e: PointerEvent) => this.handleViewportPointerDown(e);
-    canvas.addEventListener('pointerdown', pointerDown, { capture: false });
-    this.eventListeners.push(() => canvas.removeEventListener('pointerdown', pointerDown));
+    // Update properties during transform
+    this.transformControls.addEventListener('change', () => {
+      if (this.selectedObject) {
+        this.updateTransformInputs(this.selectedObject);
+      }
+    });
+
+    // Pointer down for selection - with capture disabled so TransformControls gets first chance
+    canvas.addEventListener('pointerdown', (e) => {
+      this.handlePointerDown(e);
+    }, { capture: false });
 
     // Window resize
-    const resize = () => this.handleResize();
-    window.addEventListener('resize', resize);
-    this.eventListeners.push(() => window.removeEventListener('resize', resize));
+    window.addEventListener('resize', () => {
+      const width = this.viewport.clientWidth;
+      const height = this.viewport.clientHeight;
+      
+      this.camera.aspect = width / height;
+      this.camera.updateProjectionMatrix();
+      this.renderer.setSize(width, height);
+    });
 
-    // Transform controls events
-    if (this.transformControls) {
-      // Drag start - record initial state
-      this.transformControls.addEventListener('mouseDown', () => {
-        console.log('[Editor] Transform drag started');
-        this.state.transformDragging = true;
-        if (this.orbitControls) {
-          this.orbitControls.enabled = false;
-        }
-        // Record pre-transform state for undo
-        if (this.state.selectedObject) {
-          const obj = this.state.selectedObject;
-          obj.userData.transformStart = {
-            position: obj.position.clone(),
-            rotation: obj.rotation.clone(),
-            scale: obj.scale.clone()
-          };
-        }
-      });
-
-      // Drag end - create undo command
-      this.transformControls.addEventListener('mouseUp', () => {
-        console.log('[Editor] Transform drag ended');
-        this.state.transformDragging = false;
-        if (this.orbitControls) {
-          this.orbitControls.enabled = true;
-        }
-        // Create undo command
-        if (this.state.selectedObject && this.sceneManager) {
-          const obj = this.state.selectedObject;
-          const startData = obj.userData.transformStart;
-          if (startData) {
-            const cmd = new TransformCommand(
-              obj,
-              startData.position,
-              startData.rotation,
-              startData.scale
-            );
-            this.commandManager.execute(cmd);
-            delete obj.userData.transformStart;
-          }
-        }
-      });
-
-      // Update property panel during transform
-      this.transformControls.addEventListener('change', () => {
-        if (this.state.selectedObject) {
-          this.updateTransformInputs(this.state.selectedObject);
-        }
-      });
-
-      // Dragging state change (compatibility)
-      this.transformControls.addEventListener('dragging-changed', (e) => {
-        const isDragging = Boolean((e as any).value);
-        this.state.transformDragging = isDragging;
-        if (this.orbitControls) {
-          this.orbitControls.enabled = !isDragging;
-        }
-      });
-    }
-  }
-
-  private setupGlobalKeyboardListeners(): void {
-    const keyDown = (e: KeyboardEvent) => {
-      // Undo/redo
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        if (e.shiftKey) {
-          this.redo();
-        } else {
-          this.undo();
-        }
-      }
-
-      // Transform mode shortcuts
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
       switch (e.key.toLowerCase()) {
         case 't':
           this.setTransformMode('translate');
@@ -514,1523 +183,310 @@ class Editor {
         case 's':
           this.setTransformMode('scale');
           break;
-        case 'f':
-          this.focusOnSelected();
-          break;
         case 'delete':
         case 'backspace':
-          if (this.state.selectedObject) {
-            this.deleteSelectedObject();
+          if (this.selectedObject && !(this.selectedObject instanceof THREE.Light)) {
+            this.deleteSelected();
           }
           break;
       }
-    };
-
-    document.addEventListener('keydown', keyDown);
-    this.eventListeners.push(() => document.removeEventListener('keydown', keyDown));
+    });
   }
 
-  private deleteSelectedObject(): void {
-    if (!this.state.selectedObject || !this.sceneManager) return;
+  private handlePointerDown(e: PointerEvent): void {
+    // Skip if already dragging (TransformControls is handling it)
+    if (this.isDragging) return;
 
-    const obj = this.state.selectedObject;
-    const command = new RemoveObjectCommand(this.sceneManager, obj);
-    this.commandManager.execute(command);
+    // Calculate mouse position in normalized device coordinates
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
-    this.selectObject(null);
-    this.refreshSceneTree();
-  }
+    // Use setTimeout to let TransformControls process the event first
+    setTimeout(() => {
+      // Check if TransformControls started dragging (user clicked on handle)
+      if (this.isDragging) {
+        console.log('[Editor] Transform handle clicked');
+        return;
+      }
 
-  private handleResize(): void {
-    if (!this.renderer || !this.sceneManager) return;
+      // Check if hovering over gizmo using internal TransformControls state
+      const isHoveringGizmo = (this.transformControls as any).axis !== null;
+      if (isHoveringGizmo) {
+        console.log('[Editor] Hovering gizmo, skip selection');
+        return;
+      }
 
-    const canvas = this.renderer.getCanvas();
-    const parent = canvas.parentElement;
-    if (!parent) return;
-
-    const width = parent.clientWidth;
-    const height = parent.clientHeight;
-
-    this.renderer.setSize(width, height);
-    
-    const camera = this.sceneManager.getCamera();
-    if (camera instanceof PerspectiveCamera) {
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-    }
-  }
-
-  /**
-   * Handle viewport pointer down for object selection
-   * Critical fix: Check if clicking on TransformControls handles before selecting
-   */
-  private handleViewportPointerDown(e: PointerEvent): void {
-    if (!this.sceneManager || !this.transformControls) return;
-
-    // Get click position
-    const canvas = this.renderer.getCanvas();
-    const rect = canvas.getBoundingClientRect();
-    const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
-    // CRITICAL FIX: Check if clicking on TransformControls handles first
-    this.raycaster.setFromCamera(new Vector2(mouseX, mouseY), this.sceneManager.getCamera());
-
-    // Get all possible intersects
-    const allIntersects = this.raycaster.intersectObjects(
-      this.sceneManager.getScene().children,
-      true
-    );
-
-    // Check if clicked on TransformControls any part
-    const clickedOnTransformControls = allIntersects.some(hit => 
-      this.isTransformControlsChild(hit.object)
-    );
-
-    if (clickedOnTransformControls) {
-      console.log('[Editor] Clicked on transform handle, ignoring selection');
-      return;
-    }
-
-    // Filter out helpers, find actual scene object
-    const validIntersects = allIntersects.filter(i => 
-      !this.isGridHelperChild(i.object) &&
-      !this.isDirectionalLightHelper(i.object) &&
-      !this.isTransformControlsChild(i.object)
-    );
-
-    if (validIntersects.length > 0) {
-      let target = validIntersects[0].object;
+      // Perform raycasting for object selection
+      this.raycaster.setFromCamera(this.mouse, this.camera);
       
-      // Traverse up to direct child (not Scene's child)
-      while (target.parent && target.parent.type !== 'Scene') {
-        if (target.parent.type === 'Group') {
-          target = target.parent;
-          break;
+      // Get all intersectable objects (exclude helpers and TransformControls)
+      const intersectObjects: THREE.Object3D[] = [];
+      this.scene.traverse((obj) => {
+        if (this.isSelectable(obj)) {
+          intersectObjects.push(obj);
         }
-        target = target.parent;
-      }
+      });
 
-      console.log('[Editor] Selected object:', target.name || target.type);
-      this.selectObject(target);
-    } else {
-      // Clicked on empty space - keep current selection (don't deselect)
-      console.log('[Editor] Clicked on empty space, keeping current selection');
-    }
-  }
+      const intersects = this.raycaster.intersectObjects(intersectObjects, false);
 
-  private isDirectionalLightHelper(obj: Object3D): boolean {
-    for (const [, data] of this.directionalLightHelpers) {
-      if (data.helper === obj || data.gizmo === obj) return true;
-    }
-    return false;
-  }
-
-  /**
-   * Select an object and attach TransformControls
-   */
-  public selectObject(obj: Object3D | null): void {
-    this.state.selectedObject = obj;
-
-    // Update transform controls
-    if (this.transformControls) {
-      if (obj) {
-        this.transformControls.visible = true;
-        this.transformControls.enabled = true;
-        this.transformControls.attach(obj);
-        // Force handle size - use larger value for visibility
-        this.transformControls.setSize(1.5);
-        console.log('[Editor] TransformControls attached to', obj.name || obj.type);
+      if (intersects.length > 0) {
+        // Find the topmost selectable parent
+        let target = intersects[0].object;
+        while (target.parent && target.parent !== this.scene && !(target.parent instanceof THREE.GridHelper)) {
+          target = target.parent;
+        }
+        
+        console.log('[Editor] Selected:', target.name || target.type);
+        this.selectObject(target);
       } else {
-        this.transformControls.detach();
-        this.transformControls.visible = false;
-        console.log('[Editor] TransformControls detached');
+        // Clicked on empty space - deselect
+        this.selectObject(null);
       }
+    }, 5);
+  }
+
+  private isSelectable(obj: THREE.Object3D): boolean {
+    // Skip if it's part of TransformControls
+    let parent = obj.parent;
+    while (parent) {
+      if (parent === this.transformControls) return false;
+      parent = parent.parent;
     }
+    
+    // Skip helpers
+    if (obj instanceof THREE.GridHelper) return false;
+    if (obj instanceof THREE.AxesHelper) return false;
+    if (obj instanceof THREE.Light && !(obj instanceof THREE.Mesh)) return false;
+    
+    // Must be a Mesh or Group
+    return obj instanceof THREE.Mesh || obj instanceof THREE.Group;
+  }
 
-    // Update property panel
-    this.updatePropertyInputs();
+  private selectObject(obj: THREE.Object3D | null): void {
+    this.selectedObject = obj;
 
-    // Update scene tree selection state
-    this.updateSceneTreeSelection();
-
-    // Clear directional light helpers
-    this.clearDirectionalLightHelpers();
-    this.clearSpotLightTargetHelper();
-
-    if (obj instanceof DirectionalLight) {
-      this.setupDirectionalLightHelper(obj);
-    } else if (obj instanceof SpotLight) {
-      this.setupSpotLightTargetHelper(obj);
+    // Update TransformControls
+    if (obj) {
+      this.transformControls.attach(obj);
+      this.transformControls.visible = true;
+    } else {
+      this.transformControls.detach();
+      this.transformControls.visible = false;
     }
 
     // Update UI
-    const deleteBtn = document.getElementById('btn-delete');
-    if (deleteBtn) {
-      deleteBtn.style.display = obj ? 'block' : 'none';
-    }
+    this.updatePropertyPanel();
+    this.updateSceneTreeSelection();
   }
 
-  private updateSceneTreeSelection(): void {
-    document.querySelectorAll('.scene-tree-item').forEach(item => {
-      item.classList.remove('selected');
-    });
-
-    if (this.state.selectedObject) {
-      const item = document.querySelector(`[data-uuid="${this.state.selectedObject.uuid}"]`);
-      item?.classList.add('selected');
-    }
-  }
-
-  private setupPropertyInputs(): void {
-    this.setupTransformInputs();
-    this.setupLightPropertyInputs();
-    this.setupMaterialPropertyInputs();
-    this.setupCameraPropertyInputs();
-  }
-
-  private setupTransformInputs(): void {
-    const inputs = [
-      'pos-x', 'pos-y', 'pos-z',
-      'rot-x', 'rot-y', 'rot-z',
-      'scale-x', 'scale-y', 'scale-z'
-    ];
-
-    // Store pre-transform state
-    let oldPosition = new Vector3();
-    let oldRotation = new Euler();
-    let oldScale = new Vector3();
-
-    inputs.forEach(id => {
-      const input = document.getElementById(id) as HTMLInputElement;
-      if (!input) return;
-
-      // Record old value on focus
-      input.addEventListener('focus', () => {
-        if (this.state.selectedObject) {
-          oldPosition.copy(this.state.selectedObject.position);
-          oldRotation.copy(this.state.selectedObject.rotation);
-          oldScale.copy(this.state.selectedObject.scale);
-        }
-      });
-
-      // Real-time update
-      input.addEventListener('input', () => this.updateTransformFromInputs());
-
-      // Create undo command on change
-      input.addEventListener('change', () => {
-        if (this.state.selectedObject && this.sceneManager) {
-          const obj = this.state.selectedObject;
-          const cmd = new TransformCommand(
-            obj,
-            oldPosition,
-            oldRotation,
-            oldScale
-          );
-          this.commandManager.execute(cmd);
-          // Update old values for next edit
-          oldPosition.copy(obj.position);
-          oldRotation.copy(obj.rotation);
-          oldScale.copy(obj.scale);
-        }
-      });
-    });
-  }
-
-  private setupLightPropertyInputs(): void {
-    // Color
-    const colorInput = document.getElementById('light-color') as HTMLInputElement;
-    if (colorInput) {
-      colorInput.addEventListener('change', () => this.updateLightFromInputs());
-    }
-
-    // Intensity - sync slider and number input
-    const intensitySlider = document.getElementById('light-intensity-slider') as HTMLInputElement;
-    const intensityInput = document.getElementById('light-intensity') as HTMLInputElement;
-    if (intensitySlider && intensityInput) {
-      intensitySlider.addEventListener('input', () => {
-        intensityInput.value = intensitySlider.value;
-        this.updateLightFromInputs();
-      });
-      intensityInput.addEventListener('change', () => {
-        intensitySlider.value = intensityInput.value;
-        this.updateLightFromInputs();
-      });
-    }
-
-    // Distance
-    const distanceSlider = document.getElementById('light-distance-slider') as HTMLInputElement;
-    const distanceInput = document.getElementById('light-distance') as HTMLInputElement;
-    if (distanceSlider && distanceInput) {
-      distanceSlider.addEventListener('input', () => {
-        distanceInput.value = distanceSlider.value;
-        this.updateLightFromInputs();
-      });
-      distanceInput.addEventListener('change', () => {
-        distanceSlider.value = distanceInput.value;
-        this.updateLightFromInputs();
-      });
-    }
-
-    // Angle
-    const angleSlider = document.getElementById('light-angle-slider') as HTMLInputElement;
-    const angleInput = document.getElementById('light-angle') as HTMLInputElement;
-    if (angleSlider && angleInput) {
-      angleSlider.addEventListener('input', () => {
-        angleInput.value = angleSlider.value;
-        this.updateLightFromInputs();
-      });
-      angleInput.addEventListener('change', () => {
-        angleSlider.value = angleInput.value;
-        this.updateLightFromInputs();
-      });
-    }
-
-    // Penumbra
-    const penumbraSlider = document.getElementById('light-penumbra-slider') as HTMLInputElement;
-    const penumbraInput = document.getElementById('light-penumbra') as HTMLInputElement;
-    if (penumbraSlider && penumbraInput) {
-      penumbraSlider.addEventListener('input', () => {
-        penumbraInput.value = penumbraSlider.value;
-        this.updateLightFromInputs();
-      });
-      penumbraInput.addEventListener('change', () => {
-        penumbraSlider.value = penumbraInput.value;
-        this.updateLightFromInputs();
-      });
-    }
-
-    // Decay
-    const decaySlider = document.getElementById('light-decay-slider') as HTMLInputElement;
-    const decayInput = document.getElementById('light-decay') as HTMLInputElement;
-    if (decaySlider && decayInput) {
-      decaySlider.addEventListener('input', () => {
-        decayInput.value = decaySlider.value;
-        this.updateLightFromInputs();
-      });
-      decayInput.addEventListener('change', () => {
-        decaySlider.value = decayInput.value;
-        this.updateLightFromInputs();
-      });
-    }
-  }
-
-  private setupMaterialPropertyInputs(): void {
-    // Color input
-    const colorInput = document.getElementById('material-color') as HTMLInputElement;
-    if (colorInput) {
-      colorInput.addEventListener('change', () => this.updateMaterialFromInputs());
-    }
-
-    // Emissive input
-    const emissiveInput = document.getElementById('material-emissive') as HTMLInputElement;
-    if (emissiveInput) {
-      emissiveInput.addEventListener('change', () => this.updateMaterialFromInputs());
-    }
-
-    // Roughness - sync slider and number input
-    const roughnessSlider = document.getElementById('material-roughness-slider') as HTMLInputElement;
-    const roughnessInput = document.getElementById('material-roughness') as HTMLInputElement;
-    if (roughnessSlider && roughnessInput) {
-      roughnessSlider.addEventListener('input', () => {
-        roughnessInput.value = roughnessSlider.value;
-        this.updateMaterialFromInputs();
-      });
-      roughnessInput.addEventListener('change', () => {
-        roughnessSlider.value = roughnessInput.value;
-        this.updateMaterialFromInputs();
-      });
-    }
-
-    // Metalness - sync slider and number input
-    const metalnessSlider = document.getElementById('material-metalness-slider') as HTMLInputElement;
-    const metalnessInput = document.getElementById('material-metalness') as HTMLInputElement;
-    if (metalnessSlider && metalnessInput) {
-      metalnessSlider.addEventListener('input', () => {
-        metalnessInput.value = metalnessSlider.value;
-        this.updateMaterialFromInputs();
-      });
-      metalnessInput.addEventListener('change', () => {
-        metalnessSlider.value = metalnessInput.value;
-        this.updateMaterialFromInputs();
-      });
-    }
-
-    // Opacity
-    const opacitySlider = document.getElementById('material-opacity-slider') as HTMLInputElement;
-    const opacityInput = document.getElementById('material-opacity') as HTMLInputElement;
-    if (opacitySlider && opacityInput) {
-      opacitySlider.addEventListener('input', () => {
-        opacityInput.value = opacitySlider.value;
-        this.updateMaterialFromInputs();
-      });
-      opacityInput.addEventListener('change', () => {
-        opacitySlider.value = opacityInput.value;
-        this.updateMaterialFromInputs();
-      });
-    }
-
-    // Transparent toggle
-    const transparentCheck = document.getElementById('material-transparent') as HTMLInputElement;
-    if (transparentCheck) {
-      transparentCheck.addEventListener('change', () => this.updateMaterialFromInputs());
-    }
-
-    // Wireframe toggle
-    const wireframeCheck = document.getElementById('material-wireframe') as HTMLInputElement;
-    if (wireframeCheck) {
-      wireframeCheck.addEventListener('change', () => this.updateMaterialFromInputs());
-    }
-
-    // Clearcoat
-    const clearcoatSlider = document.getElementById('material-clearcoat-slider') as HTMLInputElement;
-    const clearcoatInput = document.getElementById('material-clearcoat') as HTMLInputElement;
-    if (clearcoatSlider && clearcoatInput) {
-      clearcoatSlider.addEventListener('input', () => {
-        clearcoatInput.value = clearcoatSlider.value;
-        this.updateMaterialFromInputs();
-      });
-      clearcoatInput.addEventListener('change', () => {
-        clearcoatSlider.value = clearcoatInput.value;
-        this.updateMaterialFromInputs();
-      });
-    }
-  }
-
-  private setupCameraPropertyInputs(): void {
-    // FOV
-    const fovSlider = document.getElementById('camera-fov-slider') as HTMLInputElement;
-    const fovInput = document.getElementById('camera-fov') as HTMLInputElement;
-    if (fovSlider && fovInput) {
-      fovSlider.addEventListener('input', () => {
-        fovInput.value = fovSlider.value;
-        this.updateCameraFromInputs();
-      });
-      fovInput.addEventListener('change', () => {
-        fovSlider.value = fovInput.value;
-        this.updateCameraFromInputs();
-      });
-    }
-
-    // Near/Far
-    const nearInput = document.getElementById('camera-near') as HTMLInputElement;
-    const farInput = document.getElementById('camera-far') as HTMLInputElement;
-    if (nearInput) nearInput.addEventListener('change', () => this.updateCameraFromInputs());
-    if (farInput) farInput.addEventListener('change', () => this.updateCameraFromInputs());
-  }
-
-  private updateCameraFromInputs(): void {
-    const camera = this.sceneManager?.getCamera();
-    if (!camera || !(camera instanceof PerspectiveCamera)) return;
-
-    const fovInput = document.getElementById('camera-fov') as HTMLInputElement;
-    const nearInput = document.getElementById('camera-near') as HTMLInputElement;
-    const farInput = document.getElementById('camera-far') as HTMLInputElement;
-
-    if (fovInput) camera.fov = parseFloat(fovInput.value) || 50;
-    if (nearInput) camera.near = parseFloat(nearInput.value) || 0.1;
-    if (farInput) camera.far = parseFloat(farInput.value) || 1000;
-
-    camera.updateProjectionMatrix();
-  }
-
-  /**
-   * Update property panel visibility based on selection
-   */
-  private updatePropertyInputs(): void {
-    const propertiesContent = document.getElementById('properties');
-    
-    if (!this.state.selectedObject) {
-      const noSelection = document.getElementById('no-selection');
-      if (propertiesContent) propertiesContent.style.display = 'block';
-      if (noSelection) noSelection.style.display = 'block';
-      // Hide all property panels
-      const transformProperties = document.getElementById('transform-properties');
-      const lightProperties = document.getElementById('light-properties');
-      const materialProperties = document.getElementById('material-properties');
-      const cameraProperties = document.getElementById('camera-properties');
-      if (transformProperties) transformProperties.style.display = 'none';
-      if (lightProperties) lightProperties.style.display = 'none';
-      if (materialProperties) materialProperties.style.display = 'none';
-      if (cameraProperties) cameraProperties.style.display = 'none';
+  private updatePropertyPanel(): void {
+    if (!this.selectedObject) {
+      // No selection
+      if (this.noSelectionMsg) this.noSelectionMsg.style.display = 'block';
+      if (this.transformProps) this.transformProps.style.display = 'none';
       return;
     }
 
-    // Show property container
-    if (propertiesContent) propertiesContent.style.display = 'block';
+    // Show transform properties
+    if (this.noSelectionMsg) this.noSelectionMsg.style.display = 'none';
+    if (this.transformProps) this.transformProps.style.display = 'block';
 
-    const noSelection = document.getElementById('no-selection');
-    if (noSelection) noSelection.style.display = 'none';
-
-    // Show property content
-    const transformProperties = document.getElementById('transform-properties');
-    const lightProperties = document.getElementById('light-properties');
-    const materialProperties = document.getElementById('material-properties');
-    const cameraProperties = document.getElementById('camera-properties');
-
-    if (transformProperties) transformProperties.style.display = 'block';
-    if (lightProperties) lightProperties.style.display = 'none';
-    if (materialProperties) materialProperties.style.display = 'none';
-    if (cameraProperties) cameraProperties.style.display = 'none';
-
-    const obj = this.state.selectedObject;
-
-    // Update transform inputs
-    this.updateTransformInputs(obj);
-
-    // Update light properties
-    if (obj instanceof Light) {
-      if (lightProperties) lightProperties.style.display = 'block';
-      this.updateLightInputs(obj);
-    }
-
-    // Update material properties
-    if (obj instanceof Mesh) {
-      if (materialProperties) materialProperties.style.display = 'block';
-      this.updateMaterialInputs(obj);
-    }
-
-    // Update camera properties
-    if (obj instanceof Camera) {
-      if (cameraProperties) cameraProperties.style.display = 'block';
-      this.updateCameraInputs(obj);
-    }
+    // Update input values
+    this.updateTransformInputs(this.selectedObject);
   }
 
-  private updateTransformInputs(obj: Object3D): void {
+  private updateTransformInputs(obj: THREE.Object3D): void {
+    // Position
     const posX = document.getElementById('pos-x') as HTMLInputElement;
     const posY = document.getElementById('pos-y') as HTMLInputElement;
     const posZ = document.getElementById('pos-z') as HTMLInputElement;
+    
+    if (posX) posX.value = obj.position.x.toFixed(2);
+    if (posY) posY.value = obj.position.y.toFixed(2);
+    if (posZ) posZ.value = obj.position.z.toFixed(2);
 
-    if (posX) posX.value = obj.position.x.toFixed(3);
-    if (posY) posY.value = obj.position.y.toFixed(3);
-    if (posZ) posZ.value = obj.position.z.toFixed(3);
-
+    // Rotation (convert to degrees)
     const rotX = document.getElementById('rot-x') as HTMLInputElement;
     const rotY = document.getElementById('rot-y') as HTMLInputElement;
     const rotZ = document.getElementById('rot-z') as HTMLInputElement;
+    
+    const euler = new THREE.Euler().setFromQuaternion(obj.quaternion);
+    if (rotX) rotX.value = THREE.MathUtils.radToDeg(euler.x).toFixed(1);
+    if (rotY) rotY.value = THREE.MathUtils.radToDeg(euler.y).toFixed(1);
+    if (rotZ) rotZ.value = THREE.MathUtils.radToDeg(euler.z).toFixed(1);
 
-    const euler = new Euler().setFromQuaternion(obj.quaternion);
-    if (rotX) rotX.value = MathUtils.radToDeg(euler.x).toFixed(2);
-    if (rotY) rotY.value = MathUtils.radToDeg(euler.y).toFixed(2);
-    if (rotZ) rotZ.value = MathUtils.radToDeg(euler.z).toFixed(2);
-
+    // Scale
     const scaleX = document.getElementById('scale-x') as HTMLInputElement;
     const scaleY = document.getElementById('scale-y') as HTMLInputElement;
     const scaleZ = document.getElementById('scale-z') as HTMLInputElement;
-
-    if (scaleX) scaleX.value = obj.scale.x.toFixed(3);
-    if (scaleY) scaleY.value = obj.scale.y.toFixed(3);
-    if (scaleZ) scaleZ.value = obj.scale.z.toFixed(3);
+    
+    if (scaleX) scaleX.value = obj.scale.x.toFixed(2);
+    if (scaleY) scaleY.value = obj.scale.y.toFixed(2);
+    if (scaleZ) scaleZ.value = obj.scale.z.toFixed(2);
   }
 
-  private updateLightInputs(light: Light): void {
-    const container = document.getElementById('light-properties');
-    if (container) {
-      container.style.display = 'block';
-    }
+  private updateObjectFromInputs(): void {
+    if (!this.selectedObject) return;
 
-    const colorInput = document.getElementById('light-color') as HTMLInputElement;
-    const intensityInput = document.getElementById('light-intensity') as HTMLInputElement;
-    const intensitySlider = document.getElementById('light-intensity-slider') as HTMLInputElement;
+    const obj = this.selectedObject;
 
-    if (colorInput) colorInput.value = '#' + light.color.getHexString();
-    if (intensityInput) {
-      intensityInput.value = light.intensity.toFixed(1);
-      if (intensitySlider) intensitySlider.value = light.intensity.toFixed(1);
-    }
-
-    // Light type specific properties - show/hide corresponding rows
-    const distanceRow = document.getElementById('light-distance-row');
-    const angleRow = document.getElementById('light-angle-row');
-    const penumbraRow = document.getElementById('light-penumbra-row');
-    const decayRow = document.getElementById('light-decay-row');
-
-    // Hide specific properties by default
-    if (distanceRow) distanceRow.style.display = 'none';
-    if (angleRow) angleRow.style.display = 'none';
-    if (penumbraRow) penumbraRow.style.display = 'none';
-    if (decayRow) decayRow.style.display = 'none';
-
-    if (light instanceof PointLight || light instanceof SpotLight) {
-      if (distanceRow) {
-        distanceRow.style.display = 'flex';
-        const distanceInput = document.getElementById('light-distance') as HTMLInputElement;
-        const distanceSlider = document.getElementById('light-distance-slider') as HTMLInputElement;
-        if (distanceInput) distanceInput.value = (light.distance || 0).toString();
-        if (distanceSlider) distanceSlider.value = (light.distance || 0).toString();
-      }
-    }
-
-    if (light instanceof SpotLight) {
-      if (angleRow) {
-        angleRow.style.display = 'flex';
-        const angleInput = document.getElementById('light-angle') as HTMLInputElement;
-        const angleSlider = document.getElementById('light-angle-slider') as HTMLInputElement;
-        const angleDeg = MathUtils.radToDeg(light.angle);
-        if (angleInput) angleInput.value = angleDeg.toFixed(0);
-        if (angleSlider) angleSlider.value = angleDeg.toFixed(0);
-      }
-      if (penumbraRow) {
-        penumbraRow.style.display = 'flex';
-        const penumbraInput = document.getElementById('light-penumbra') as HTMLInputElement;
-        const penumbraSlider = document.getElementById('light-penumbra-slider') as HTMLInputElement;
-        if (penumbraInput) penumbraInput.value = light.penumbra.toFixed(2);
-        if (penumbraSlider) penumbraSlider.value = light.penumbra.toFixed(2);
-      }
-    }
-  }
-
-  private updateMaterialInputs(mesh: Mesh): void {
-    const container = document.getElementById('material-properties');
-    if (container) {
-      container.style.display = 'block';
-    }
-
-    const material = mesh.material as any;
-    if (!material) return;
-
-    const colorInput = document.getElementById('material-color') as HTMLInputElement;
-    const metalnessInput = document.getElementById('material-metalness') as HTMLInputElement;
-    const metalnessSlider = document.getElementById('material-metalness-slider') as HTMLInputElement;
-    const roughnessInput = document.getElementById('material-roughness') as HTMLInputElement;
-    const roughnessSlider = document.getElementById('material-roughness-slider') as HTMLInputElement;
-    const emissiveInput = document.getElementById('material-emissive') as HTMLInputElement;
-    const opacityInput = document.getElementById('material-opacity') as HTMLInputElement;
-    const opacitySlider = document.getElementById('material-opacity-slider') as HTMLInputElement;
-    const transparentCheck = document.getElementById('material-transparent') as HTMLInputElement;
-    const wireframeCheck = document.getElementById('material-wireframe') as HTMLInputElement;
-    const clearcoatInput = document.getElementById('material-clearcoat') as HTMLInputElement;
-    const clearcoatSlider = document.getElementById('material-clearcoat-slider') as HTMLInputElement;
-
-    if (colorInput && material.color) {
-      colorInput.value = '#' + material.color.getHexString();
-    }
-    if (metalnessInput && material.metalness !== undefined) {
-      metalnessInput.value = material.metalness.toFixed(2);
-      if (metalnessSlider) metalnessSlider.value = material.metalness.toFixed(2);
-    }
-    if (roughnessInput && material.roughness !== undefined) {
-      roughnessInput.value = material.roughness.toFixed(2);
-      if (roughnessSlider) roughnessSlider.value = material.roughness.toFixed(2);
-    }
-    if (emissiveInput && material.emissive) {
-      emissiveInput.value = '#' + material.emissive.getHexString();
-    }
-    if (opacityInput && material.opacity !== undefined) {
-      opacityInput.value = material.opacity.toFixed(2);
-      if (opacitySlider) opacitySlider.value = material.opacity.toFixed(2);
-    }
-    if (transparentCheck && material.transparent !== undefined) {
-      transparentCheck.checked = material.transparent;
-    }
-    if (wireframeCheck && material.wireframe !== undefined) {
-      wireframeCheck.checked = material.wireframe;
-    }
-    if (clearcoatInput && material.clearcoat !== undefined) {
-      clearcoatInput.value = material.clearcoat.toFixed(2);
-      if (clearcoatSlider) clearcoatSlider.value = material.clearcoat.toFixed(2);
-    }
-
-    // Show/hide clearcoat (physical material only)
-    const clearcoatRow = document.getElementById('material-clearcoat-row');
-    if (clearcoatRow) {
-      clearcoatRow.style.display = material.clearcoat !== undefined ? 'flex' : 'none';
-    }
-  }
-
-  private updateCameraInputs(camera: Camera): void {
-    const container = document.getElementById('camera-properties');
-    if (container) {
-      container.style.display = 'block';
-    }
-
-    const fovInput = document.getElementById('camera-fov') as HTMLInputElement;
-    const fovSlider = document.getElementById('camera-fov-slider') as HTMLInputElement;
-    const nearInput = document.getElementById('camera-near') as HTMLInputElement;
-    const farInput = document.getElementById('camera-far') as HTMLInputElement;
-    const typeLabel = document.getElementById('camera-type');
-
-    if (camera instanceof PerspectiveCamera) {
-      if (typeLabel) typeLabel.textContent = 'Perspective Camera';
-      if (fovInput) {
-        fovInput.value = camera.fov.toFixed(0);
-        if (fovSlider) fovSlider.value = camera.fov.toFixed(0);
-      }
-      if (nearInput) nearInput.value = camera.near.toFixed(2);
-      if (farInput) farInput.value = camera.far.toFixed(1);
-    }
-  }
-
-  private updateTransformFromInputs(): void {
-    if (!this.state.selectedObject) return;
-
-    const obj = this.state.selectedObject;
-
+    // Position
     const posX = parseFloat((document.getElementById('pos-x') as HTMLInputElement)?.value || '0');
     const posY = parseFloat((document.getElementById('pos-y') as HTMLInputElement)?.value || '0');
     const posZ = parseFloat((document.getElementById('pos-z') as HTMLInputElement)?.value || '0');
-
+    
     if (!isNaN(posX) && !isNaN(posY) && !isNaN(posZ)) {
       obj.position.set(posX, posY, posZ);
     }
 
+    // Rotation
     const rotX = parseFloat((document.getElementById('rot-x') as HTMLInputElement)?.value || '0');
     const rotY = parseFloat((document.getElementById('rot-y') as HTMLInputElement)?.value || '0');
     const rotZ = parseFloat((document.getElementById('rot-z') as HTMLInputElement)?.value || '0');
-
+    
     if (!isNaN(rotX) && !isNaN(rotY) && !isNaN(rotZ)) {
       obj.rotation.set(
-        MathUtils.degToRad(rotX),
-        MathUtils.degToRad(rotY),
-        MathUtils.degToRad(rotZ)
+        THREE.MathUtils.degToRad(rotX),
+        THREE.MathUtils.degToRad(rotY),
+        THREE.MathUtils.degToRad(rotZ)
       );
     }
 
+    // Scale
     const scaleX = parseFloat((document.getElementById('scale-x') as HTMLInputElement)?.value || '1');
     const scaleY = parseFloat((document.getElementById('scale-y') as HTMLInputElement)?.value || '1');
     const scaleZ = parseFloat((document.getElementById('scale-z') as HTMLInputElement)?.value || '1');
-
+    
     if (!isNaN(scaleX) && !isNaN(scaleY) && !isNaN(scaleZ)) {
       obj.scale.set(scaleX, scaleY, scaleZ);
     }
-
-    this.updateSelectionBox();
   }
 
-  private updateLightFromInputs(): void {
-    if (!this.state.selectedObject || !(this.state.selectedObject instanceof Light)) return;
-
-    const light = this.state.selectedObject;
-
-    const colorInput = document.getElementById('light-color') as HTMLInputElement;
-    const intensityInput = document.getElementById('light-intensity') as HTMLInputElement;
-
-    if (colorInput) light.color.set(colorInput.value);
-    if (intensityInput) light.intensity = parseFloat(intensityInput.value) || 1;
-
-    if (light instanceof PointLight || light instanceof SpotLight) {
-      const distanceInput = document.getElementById('light-distance') as HTMLInputElement;
-      if (distanceInput) light.distance = parseFloat(distanceInput.value) || 0;
-    }
-
-    if (light instanceof SpotLight) {
-      const angleInput = document.getElementById('light-angle') as HTMLInputElement;
-      const penumbraInput = document.getElementById('light-penumbra') as HTMLInputElement;
-      if (angleInput) light.angle = MathUtils.degToRad(parseFloat(angleInput.value) || 45);
-      if (penumbraInput) light.penumbra = parseFloat(penumbraInput.value) || 0;
-    }
+  private setTransformMode(mode: 'translate' | 'rotate' | 'scale'): void {
+    this.transformMode = mode;
+    this.transformControls.setMode(mode);
+    this.updateToolbarState();
+    console.log('[Editor] Mode:', mode);
   }
 
-  private updateMaterialFromInputs(): void {
-    if (!this.state.selectedObject || !(this.state.selectedObject instanceof Mesh)) return;
-
-    const mesh = this.state.selectedObject;
-    const material = mesh.material as any;
-    if (!material) return;
-
-    const colorInput = document.getElementById('material-color') as HTMLInputElement;
-    const metalnessInput = document.getElementById('material-metalness') as HTMLInputElement;
-    const roughnessInput = document.getElementById('material-roughness') as HTMLInputElement;
-    const emissiveInput = document.getElementById('material-emissive') as HTMLInputElement;
-    const opacityInput = document.getElementById('material-opacity') as HTMLInputElement;
-    const transparentCheck = document.getElementById('material-transparent') as HTMLInputElement;
-    const wireframeCheck = document.getElementById('material-wireframe') as HTMLInputElement;
-    const clearcoatInput = document.getElementById('material-clearcoat') as HTMLInputElement;
-
-    if (colorInput && material.color) {
-      material.color.set(colorInput.value);
-    }
-    if (metalnessInput && material.metalness !== undefined) {
-      material.metalness = parseFloat(metalnessInput.value) || 0;
-    }
-    if (roughnessInput && material.roughness !== undefined) {
-      material.roughness = parseFloat(roughnessInput.value) || 1;
-    }
-    if (emissiveInput && material.emissive) {
-      material.emissive.set(emissiveInput.value);
-    }
-    if (opacityInput && material.opacity !== undefined) {
-      material.opacity = parseFloat(opacityInput.value) || 1;
-    }
-    if (transparentCheck && material.transparent !== undefined) {
-      material.transparent = transparentCheck.checked;
-    }
-    if (wireframeCheck && material.wireframe !== undefined) {
-      material.wireframe = wireframeCheck.checked;
-    }
-    if (clearcoatInput && material.clearcoat !== undefined) {
-      material.clearcoat = parseFloat(clearcoatInput.value) || 0;
-    }
-
-    // Mark material needs update
-    material.needsUpdate = true;
+  private updateToolbarState(): void {
+    document.getElementById('tool-translate')?.classList.toggle('active', this.transformMode === 'translate');
+    document.getElementById('tool-rotate')?.classList.toggle('active', this.transformMode === 'rotate');
+    document.getElementById('tool-scale')?.classList.toggle('active', this.transformMode === 'scale');
   }
 
-  /**
-   * Setup draggable floating toolbars
-   */
-  private setupDraggableToolbars(): void {
-    // Use inline script to add drag functionality
-    const script = document.createElement('script');
-    script.textContent = `
-      (function() {
-        const toolbars = document.querySelectorAll('.floating-toolbar');
-        toolbars.forEach(function(toolbar) {
-          let isDragging = false;
-          let startX = 0, startY = 0, startLeft = 0, startTop = 0;
-          
-          toolbar.onmousedown = function(e) {
-            if (e.button !== 0) return;
-            // Check if clicking button interior, if so don't drag
-            if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
-            
-            isDragging = true;
-            startX = e.clientX;
-            startY = e.clientY;
-            var rect = toolbar.getBoundingClientRect();
-            startLeft = rect.left;
-            startTop = rect.top;
-            toolbar.style.position = 'fixed';
-            toolbar.style.left = startLeft + 'px';
-            toolbar.style.top = startTop + 'px';
-            toolbar.style.transform = 'none';
-            toolbar.style.cursor = 'grabbing';
-            e.preventDefault();
-          };
-          
-          document.addEventListener('mousemove', function(e) {
-            if (!isDragging) return;
-            var dx = e.clientX - startX;
-            var dy = e.clientY - startY;
-            toolbar.style.left = (startLeft + dx) + 'px';
-            toolbar.style.top = (startTop + dy) + 'px';
-          });
-          
-          document.addEventListener('mouseup', function() {
-            if (isDragging) {
-              isDragging = false;
-              toolbar.style.cursor = 'grab';
-            }
-          });
-        });
-      })();
-    `;
-    document.head.appendChild(script);
-  }
-
-  private addPrimitive(type: 'Box' | 'Sphere' | 'Plane' | 'Cylinder' | 'Torus' | 'Custom'): void {
-    if (!this.sceneManager) return;
-
-    const mesh = this.sceneManager.createPrimitive(type);
-    // New object defaults to origin (0, 0, 0)
-    mesh.position.set(0, 0, 0);
-
-    const command = new AddObjectCommand(this.sceneManager, mesh);
-    this.commandManager.execute(command);
-
+  private addCube(): void {
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshStandardMaterial({ color: 0x4caf50 });
+    const mesh = new THREE.Mesh(geometry, material);
+    
+    mesh.position.set(0, 0.5, 0);
+    mesh.name = `Cube ${this.getObjectCount('Cube') + 1}`;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    
+    this.scene.add(mesh);
     this.refreshSceneTree();
     this.selectObject(mesh);
-    this.showToast(`Added ${type}`);
+    
+    console.log('[Editor] Added cube');
   }
 
-  private addLight(type: 'ambient' | 'directional' | 'point' | 'spot' | 'hemisphere'): void {
-    if (!this.sceneManager) return;
-
-    let light: Light;
-
-    switch (type) {
-      case 'ambient':
-        light = new AmbientLight(0xffffff, 0.5);
-        break;
-      case 'directional':
-        light = new DirectionalLight(0xffffff, 1);
-        light.position.set(5, 10, 5);
-        break;
-      case 'point':
-        light = new PointLight(0xffffff, 1, 100);
-        light.position.set(0, 5, 0);
-        break;
-      case 'spot': {
-        const spotLight = new SpotLight(0xffffff, 1);
-        spotLight.position.set(0, 10, 0);
-        spotLight.target.position.set(0, 0, 0);
-        light = spotLight;
-        break;
-      }
-      case 'hemisphere':
-        light = new HemisphereLight(0xffffff, 0x444444, 1);
-        break;
-      default:
-        light = new PointLight(0xffffff, 1);
-    }
-
-    light.name = `${type} Light`;
-
-    const command = new AddObjectCommand(this.sceneManager, light);
-    this.commandManager.execute(command);
-
+  private addSphere(): void {
+    const geometry = new THREE.SphereGeometry(0.5, 32, 16);
+    const material = new THREE.MeshStandardMaterial({ color: 0x2196f3 });
+    const mesh = new THREE.Mesh(geometry, material);
+    
+    mesh.position.set(0, 0.5, 0);
+    mesh.name = `Sphere ${this.getObjectCount('Sphere') + 1}`;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    
+    this.scene.add(mesh);
     this.refreshSceneTree();
-    this.selectObject(light);
-    this.showToast(`Added ${type} light`);
+    this.selectObject(mesh);
+    
+    console.log('[Editor] Added sphere');
   }
 
-  private async importModel(): Promise<void> {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.glb,.gltf,.obj,.fbx';
-
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file || !this.sceneManager) return;
-
-      try {
-        this.showToast('Importing model...');
-        const result = await this.modelImporter.importFromFile(file, {
-          addToScene: false
-        });
-
-        if (result.success && result.object) {
-          const command = new AddObjectCommand(this.sceneManager, result.object);
-          this.commandManager.execute(command);
-          this.refreshSceneTree();
-          this.selectObject(result.object);
-          this.showToast('Model imported successfully');
-        }
-      } catch (error) {
-        console.error('Import failed:', error);
-        this.showToast('Import failed');
-      }
-    };
-
-    input.click();
+  private deleteSelected(): void {
+    if (!this.selectedObject) return;
+    
+    this.scene.remove(this.selectedObject);
+    this.selectObject(null);
+    this.refreshSceneTree();
+    
+    console.log('[Editor] Deleted object');
   }
 
-  private newScene(): void {
-    if (!this.sceneManager) return;
-
-    if (confirm('Create a new scene? All unsaved changes will be lost.')) {
-      this.sceneManager.clear();
-      this.selectObject(null);
-      this.refreshSceneTree();
-      this.showToast('New scene created');
-    }
-  }
-
-  private openScene(): void {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file || !this.sceneManager) return;
-
-      try {
-        this.showToast('Loading scene...');
-        const text = await file.text();
-        const data = JSON.parse(text);
-        
-        // TODO: Implement scene deserialization
-        this.showToast('Scene loaded (TODO: implement full deserialization)');
-      } catch (error) {
-        console.error('Failed to load scene:', error);
-        this.showToast('Failed to load scene');
-      }
-    };
-
-    input.click();
-  }
-
-  private saveScene(): void {
-    if (!this.sceneManager) return;
-
-    try {
-      const sceneData = this.sceneManager.toJSON();
-      const json = SceneSerializer.serialize(sceneData, { name: 'My Scene' }, { prettyPrint: true });
-      
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `scene-${Date.now()}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      
-      this.showToast('Scene saved');
-    } catch (error) {
-      console.error('Failed to save scene:', error);
-      this.showToast('Failed to save scene');
-    }
-  }
-
-  private togglePlay(): void {
-    this.showToast('Play mode toggled (TODO: implement play mode)');
-  }
-
-  private publish(): void {
-    this.showToast('Publishing (TODO: implement publish)');
+  private getObjectCount(prefix: string): number {
+    let count = 0;
+    this.scene.traverse((obj) => {
+      if (obj.name?.startsWith(prefix)) count++;
+    });
+    return count;
   }
 
   private refreshSceneTree(): void {
-    const treeContainer = document.getElementById('scene-tree');
-    if (!treeContainer || !this.sceneManager) return;
-
-    treeContainer.innerHTML = '';
-
-    const buildTree = (obj: Object3D, level = 0): HTMLElement | null => {
-      if (!this.shouldShowObject(obj)) return null;
-
+    if (!this.sceneTree) return;
+    
+    this.sceneTree.innerHTML = '';
+    
+    this.scene.children.forEach((child) => {
+      if (!this.shouldShowInTree(child)) return;
+      
       const item = document.createElement('div');
       item.className = 'scene-tree-item';
-      item.style.paddingLeft = `${level * 16 + 8}px`;
-      item.dataset.uuid = obj.uuid;
-
-      const icon = this.getObjectIcon(obj);
-      const hasChildren = obj.children.some(c => this.shouldShowObject(c));
-      const isCollapsed = this.collapsedObjects.has(obj.uuid);
-
-      const isVisible = obj.visible;
-      item.innerHTML = `
-        <span class="tree-toggle ${hasChildren ? (isCollapsed ? 'collapsed' : 'expanded') : ''}" 
-              style="visibility: ${hasChildren ? 'visible' : 'hidden'}">▶</span>
-        <span class="tree-icon">${icon}</span>
-        <span class="tree-label">${obj.name || obj.type}</span>
-        <span class="tree-visibility ${isVisible ? 'visible' : 'hidden'}" title="Click to toggle visibility"></span>
-      `;
-
-      // Click to select
-      item.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.selectObject(obj);
-      });
-
-      // Expand/collapse
-      const toggle = item.querySelector('.tree-toggle');
-      if (toggle && hasChildren) {
-        toggle.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (this.collapsedObjects.has(obj.uuid)) {
-            this.collapsedObjects.delete(obj.uuid);
-          } else {
-            this.collapsedObjects.add(obj.uuid);
-          }
-          this.refreshSceneTree();
-        });
-      }
-
-      // Visibility toggle
-      const visibilityToggle = item.querySelector('.tree-visibility');
-      if (visibilityToggle) {
-        visibilityToggle.addEventListener('click', (e) => {
-          e.stopPropagation();
-          obj.visible = !obj.visible;
-          this.refreshSceneTree();
-        });
-      }
-
-      return item;
-    };
-
-    const traverseAndBuild = (obj: Object3D, level = 0, parent: HTMLElement) => {
-      const item = buildTree(obj, level);
-      if (item) {
-        parent.appendChild(item);
-
-        if (!this.collapsedObjects.has(obj.uuid)) {
-          obj.children.forEach(child => {
-            traverseAndBuild(child, level + 1, parent);
-          });
-        }
-      }
-    };
-
-    this.sceneManager.getScene().children.forEach(child => {
-      traverseAndBuild(child, 0, treeContainer);
-    });
-
-    this.treeEventListenersBound = true;
-  }
-
-  private shouldShowObject(obj: Object3D): boolean {
-    // Don't show transform controls children
-    if (this.isTransformControlsChild(obj)) return false;
-
-    // Don't show grid helper children
-    if (this.isGridHelperChild(obj)) return false;
-
-    // Don't show camera children
-    if (this.isCameraChild(obj)) return false;
-
-    // Don't show directional light helpers
-    if (this.isDirectionalLightHelper(obj)) return false;
-
-    // Don't show spotlight target helpers
-    if (this.spotLightTargetHelper && 
-        (obj === this.spotLightTargetHelper.mesh || 
-         obj === this.spotLightTargetHelper.line)) return false;
-
-    // Filter by type
-    if (obj instanceof Light && !this.treeFilter.lights) return false;
-    if (obj instanceof Mesh && !this.treeFilter.models) return false;
-    if (obj instanceof GridHelper && !this.treeFilter.helpers) return false;
-    if (obj instanceof CameraHelper && !this.treeFilter.helpers) return false;
-    if ((obj instanceof PerspectiveCamera || obj instanceof OrthographicCamera) && !this.treeFilter.cameras) return false;
-
-    return true;
-  }
-
-  private hasVisibleChild(obj: Object3D): boolean {
-    return obj.children.some(child => this.shouldShowObject(child));
-  }
-
-  private isTransformControlsChild(obj: Object3D): boolean {
-    if (!this.transformControls) return false;
-    let current: Object3D | null = obj;
-    while (current) {
-      if (current === this.transformControls) return true;
-      current = current.parent;
-    }
-    return false;
-  }
-
-  private isGridHelperChild(obj: Object3D): boolean {
-    return obj instanceof GridHelper || (obj.parent instanceof GridHelper);
-  }
-
-  private isCameraChild(obj: Object3D): boolean {
-    return obj instanceof CameraHelper || (obj.parent instanceof PerspectiveCamera);
-  }
-
-  private isLightChild(obj: Object3D): boolean {
-    return obj instanceof Light;
-  }
-
-  private expandParents(obj: Object3D): void {
-    let current = obj.parent;
-    while (current) {
-      this.collapsedObjects.delete(current.uuid);
-      current = current.parent;
-    }
-  }
-
-  private adjustTransformControlsSize(): void {
-    if (!this.transformControls || !this.sceneManager) return;
-
-    const camera = this.sceneManager.getCamera();
-    if (this.state.selectedObject && camera instanceof PerspectiveCamera) {
-      const obj = this.state.selectedObject;
-      const distance = camera.position.distanceTo(obj.position);
-      const size = Math.max(0.5, distance / 10);
-      this.transformControls.setSize(size);
-    }
-  }
-
-  private focusOnSelected(): void {
-    if (!this.state.selectedObject || !this.orbitControls || !this.sceneManager) return;
-
-    const obj = this.state.selectedObject;
-    const box = new Box3().setFromObject(obj);
-    const center = box.getCenter(new Vector3());
-    const size = box.getSize(new Vector3());
-
-    const maxDim = Math.max(size.x, size.y, size.z);
-    const distance = maxDim * 2;
-
-    const camera = this.sceneManager.getCamera();
-    if (camera instanceof PerspectiveCamera) {
-      const targetPosition = center.clone().add(new Vector3(0, 0, distance));
-      this.animateCameraTo(targetPosition, center);
-    }
-  }
-
-  private animateCameraTo(targetPosition: Vector3, targetLookAt: Vector3): void {
-    if (!this.sceneManager) return;
-
-    const camera = this.sceneManager.getCamera();
-    const startPosition = camera.position.clone();
-    const startLookAt = this.orbitControls?.target.clone() || new Vector3();
-
-    const duration = 500;
-    const startTime = Date.now();
-
-    const animate = () => {
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      const easeProgress = 1 - Math.pow(1 - progress, 3);
-
-      camera.position.lerpVectors(startPosition, targetPosition, easeProgress);
+      item.dataset.uuid = child.uuid;
       
-      if (this.orbitControls) {
-        this.orbitControls.target.lerpVectors(startLookAt, targetLookAt, easeProgress);
-      }
-
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      }
-    };
-
-    animate();
-  }
-
-  private showToast(message: string): void {
-    const toast = document.createElement('div');
-    toast.className = 'toast';
-    toast.textContent = message;
-    toast.style.cssText = `
-      position: fixed;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0,0,0,0.8);
-      color: white;
-      padding: 8px 16px;
-      border-radius: 4px;
-      z-index: 10000;
-      font-size: 14px;
-    `;
-
-    document.body.appendChild(toast);
-
-    setTimeout(() => {
-      toast.style.opacity = '0';
-      toast.style.transition = 'opacity 0.3s';
-      setTimeout(() => toast.remove(), 300);
-    }, 2000);
-  }
-
-  private savePersistedState(): void {
-    const state = {
-      treeFilter: this.treeFilter,
-      collapsedObjects: Array.from(this.collapsedObjects)
-    };
-    localStorage.setItem('editor-state', JSON.stringify(state));
-  }
-
-  private loadPersistedState(): void {
-    try {
-      const saved = localStorage.getItem('editor-state');
-      if (saved) {
-        const state = JSON.parse(saved);
-        if (state.treeFilter) {
-          this.treeFilter = { ...this.treeFilter, ...state.treeFilter };
-        }
-        if (state.collapsedObjects) {
-          this.collapsedObjects = new Set(state.collapsedObjects);
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to load persisted state:', e);
-    }
-  }
-
-  private createSelectionBox(obj: Object3D): void {
-    this.clearSelectionBox();
-
-    if (!this.sceneManager) return;
-
-    this.selectionBox = new BoxHelper(obj, 0xffff00);
-    this.sceneManager.getScene().add(this.selectionBox);
-  }
-
-  private clearSelectionBox(): void {
-    if (this.selectionBox && this.sceneManager) {
-      this.sceneManager.getScene().remove(this.selectionBox);
-      this.selectionBox.dispose();
-      this.selectionBox = null;
-    }
-  }
-
-  private updateSelectionBox(): void {
-    if (this.selectionBox) {
-      this.selectionBox.update();
-    }
-  }
-
-  private setupDirectionalLightHelper(light: DirectionalLight): void {
-    if (!this.sceneManager) return;
-
-    this.clearDirectionalLightHelpers();
-
-    // Create target visualization and manipulator
-    const targetGeometry = new ConeGeometry(0.2, 0.4, 8);
-    targetGeometry.rotateX(Math.PI / 2);
-    const targetMaterial = new MeshBasicMaterial({ 
-      color: 0xffff00,
-      transparent: true,
-      opacity: 0.8
-    });
-    const targetMesh = new Mesh(targetGeometry, targetMaterial);
-
-    // Set initial position
-    const targetPos = new Vector3();
-    light.target.getWorldPosition(targetPos);
-    targetMesh.position.copy(targetPos);
-    targetMesh.name = 'DirectionalLight Target';
-
-    // Create connecting line
-    const lineGeometry = new BufferGeometry().setFromPoints([
-      light.position.clone(),
-      targetPos.clone()
-    ]);
-    const lineMaterial = new LineBasicMaterial({ color: 0xffff00 });
-    const line = new Line(lineGeometry, lineMaterial);
-    line.name = 'DirectionalLight Line';
-
-    // Add to scene
-    this.sceneManager.getScene().add(targetMesh);
-    this.sceneManager.getScene().add(line);
-
-    // Create TransformControls
-    const gizmo = new TransformControls(
-      this.sceneManager.getCamera(),
-      this.renderer.getCanvas()
-    );
-    gizmo.attach(targetMesh);
-    gizmo.setSpace('world');
-    this.sceneManager.getScene().add(gizmo);
-
-    // Store reference
-    this.directionalLightHelpers.set(light.uuid, {
-      helper: targetMesh,
-      gizmo
-    });
-
-    // Listen for target changes
-    gizmo.addEventListener('change', () => {
-      light.target.position.copy(targetMesh.position);
-      light.target.updateMatrixWorld();
-
-      // Update line
-      const positions = new Float32Array([
-        light.position.x, light.position.y, light.position.z,
-        targetMesh.position.x, targetMesh.position.y, targetMesh.position.z
-      ]);
-      line.geometry.setAttribute('position', new BufferAttribute(positions, 3));
-    });
-
-    gizmo.addEventListener('dragging-changed', (e) => {
-      if (this.orbitControls) {
-        this.orbitControls.enabled = !Boolean(e.value);
-      }
-    });
-  }
-
-  private clearDirectionalLightHelpers(): void {
-    if (!this.sceneManager) return;
-
-    for (const [, data] of this.directionalLightHelpers) {
-      this.sceneManager.getScene().remove(data.helper);
-      this.sceneManager.getScene().remove(data.gizmo);
-      data.helper.traverse((child) => {
-        if (child instanceof Mesh) {
-          child.geometry.dispose();
-          (child.material as Material).dispose();
-        }
+      const icon = this.getObjectIcon(child);
+      const name = child.name || child.type;
+      
+      item.innerHTML = `<span>${icon}</span><span>${name}</span>`;
+      
+      item.addEventListener('click', () => {
+        this.selectObject(child);
       });
-      data.gizmo.dispose();
-
-      // Remove line
-      const line = this.sceneManager.getScene().getObjectByName('DirectionalLight Line');
-      if (line) {
-        this.sceneManager.getScene().remove(line);
-        (line as Line).geometry.dispose();
-        ((line as Line).material as Material).dispose();
-      }
-    }
-
-    this.directionalLightHelpers.clear();
+      
+      this.sceneTree.appendChild(item);
+    });
   }
 
-  private syncDirectionalLightTargets(): void {
-    if (!this.sceneManager) return;
-
-    for (const [uuid, data] of this.directionalLightHelpers) {
-      const light = this.sceneManager.getScene().getObjectByProperty('uuid', uuid) as DirectionalLight;
-      if (!light) continue;
-
-      // Update line position (light position may change)
-      const line = this.sceneManager.getScene().getObjectByName('DirectionalLight Line');
-      if (line && line instanceof Line) {
-        const positions = line.geometry.attributes.position.array as Float32Array;
-        positions[0] = light.position.x;
-        positions[1] = light.position.y;
-        positions[2] = light.position.z;
-        line.geometry.attributes.position.needsUpdate = true;
-      }
-    }
-  }
-
-  private setupSpotLightTargetHelper(light: SpotLight): void {
-    if (!this.sceneManager) return;
-
-    this.clearSpotLightTargetHelper();
-
-    // Ensure target is in scene
-    if (light.target.parent !== this.sceneManager.getScene()) {
-      this.sceneManager.getScene().add(light.target);
-    }
-
-    // Create target visualization
-    const targetGeometry = new ConeGeometry(0.15, 0.3, 8);
-    targetGeometry.rotateX(Math.PI / 2);
-    const targetMaterial = new MeshBasicMaterial({ 
-      color: 0xffaa00,
-      transparent: true,
-      opacity: 0.8
-    });
-    const targetMesh = new Mesh(targetGeometry, targetMaterial);
-
-    // Set position
-    const targetPos = new Vector3();
-    light.target.getWorldPosition(targetPos);
-    targetMesh.position.copy(targetPos);
-    targetMesh.name = 'SpotLight Target';
-
-    // Create connecting line
-    const lineGeometry = new BufferGeometry().setFromPoints([
-      light.position.clone(),
-      targetPos.clone()
-    ]);
-    const lineMaterial = new LineBasicMaterial({ color: 0xffaa00 });
-    const line = new Line(lineGeometry, lineMaterial);
-    line.name = 'SpotLight Line';
-
-    // Add to scene
-    this.sceneManager.getScene().add(targetMesh);
-    this.sceneManager.getScene().add(line);
-
-    // Create TransformControls
-    const gizmo = new TransformControls(
-      this.sceneManager.getCamera(),
-      this.renderer.getCanvas()
-    );
-    gizmo.attach(targetMesh);
-    gizmo.setSpace('world');
-    this.sceneManager.getScene().add(gizmo);
-
-    // Store reference
-    this.spotLightTargetHelper = { mesh: targetMesh, gizmo, line };
-
-    // Listen for target changes
-    gizmo.addEventListener('change', () => {
-      light.target.position.copy(targetMesh.position);
-      light.target.updateMatrixWorld();
-    });
-
-    gizmo.addEventListener('dragging-changed', (e) => {
-      if (this.orbitControls) {
-        this.orbitControls.enabled = !Boolean(e.value);
+  private updateSceneTreeSelection(): void {
+    document.querySelectorAll('.scene-tree-item').forEach((el) => {
+      el.classList.remove('selected');
+      if (this.selectedObject && (el as HTMLElement).dataset.uuid === this.selectedObject.uuid) {
+        el.classList.add('selected');
       }
     });
   }
 
-  private clearSpotLightTargetHelper(): void {
-    if (!this.spotLightTargetHelper || !this.sceneManager) return;
-
-    const { mesh, gizmo, line } = this.spotLightTargetHelper;
-
-    this.sceneManager.getScene().remove(mesh);
-    this.sceneManager.getScene().remove(gizmo);
-    this.sceneManager.getScene().remove(line);
-
-    mesh.geometry.dispose();
-    (mesh.material as Material).dispose();
-    line.geometry.dispose();
-    (line.material as Material).dispose();
-    gizmo.dispose();
-
-    this.spotLightTargetHelper = null;
+  private shouldShowInTree(obj: THREE.Object3D): boolean {
+    // Skip helpers and controls
+    if (obj instanceof THREE.GridHelper) return false;
+    if (obj === this.transformControls) return false;
+    if (obj instanceof THREE.Light && !(obj instanceof THREE.Mesh)) return true; // Show lights
+    
+    // Show meshes and groups
+    return obj instanceof THREE.Mesh || obj instanceof THREE.Group || obj instanceof THREE.Light;
   }
 
-  private updateSpotLightTarget(): void {
-    if (!this.spotLightTargetHelper || !this.sceneManager) return;
-
-    const light = this.state.selectedObject;
-    if (!(light instanceof SpotLight)) return;
-
-    const { mesh, line } = this.spotLightTargetHelper;
-
-    // Sync target position
-    const targetPos = new Vector3();
-    light.target.getWorldPosition(targetPos);
-    mesh.position.copy(targetPos);
-
-    // Update line - connect light position to target
-    const positions = line.geometry.attributes.position.array as Float32Array;
-    positions[0] = light.position.x;
-    positions[1] = light.position.y;
-    positions[2] = light.position.z;
-    positions[3] = targetPos.x;
-    positions[4] = targetPos.y;
-    positions[5] = targetPos.z;
-    line.geometry.attributes.position.needsUpdate = true;
-  }
-
-  private getObjectIcon(obj: Object3D): string {
-    if (obj instanceof Mesh) return '⬛';
-    if (obj instanceof Group) return '📁';
-    if (obj instanceof DirectionalLight) return '☀️';
-    if (obj instanceof PointLight) return '💡';
-    if (obj instanceof SpotLight) return '🔦';
-    if (obj instanceof AmbientLight) return '🌅';
-    if (obj instanceof HemisphereLight) return '🌈';
-    if (obj instanceof PerspectiveCamera) return '📷';
-    if (obj instanceof OrthographicCamera) return '📹';
-    if (obj instanceof GridHelper) return '▦';
+  private getObjectIcon(obj: THREE.Object3D): string {
+    if (obj instanceof THREE.Mesh) {
+      if (obj.geometry instanceof THREE.BoxGeometry) return '⬛';
+      if (obj.geometry instanceof THREE.SphereGeometry) return '🔵';
+      return '📦';
+    }
+    if (obj instanceof THREE.Group) return '📁';
+    if (obj instanceof THREE.DirectionalLight) return '☀️';
+    if (obj instanceof THREE.PointLight) return '💡';
+    if (obj instanceof THREE.AmbientLight) return '🌅';
     return '📦';
-  }
-
-  private undo(): void {
-    if (this.commandManager.canUndo()) {
-      this.commandManager.undo();
-      this.refreshSceneTree();
-      this.updatePropertyInputs();
-      this.showToast('Undo');
-    }
-  }
-
-  private redo(): void {
-    if (this.commandManager.canRedo()) {
-      this.commandManager.redo();
-      this.refreshSceneTree();
-      this.updatePropertyInputs();
-      this.showToast('Redo');
-    }
-  }
-
-  private dispose(): void {
-    // Clean up all event listeners
-    this.eventListeners.forEach(cleanup => cleanup());
-    this.eventListeners = [];
-
-    // Clean up helpers
-    this.clearDirectionalLightHelpers();
-    this.clearSpotLightTargetHelper();
-    this.clearSelectionBox();
-
-    // Clean up controllers
-    if (this.transformControls) {
-      this.transformControls.dispose();
-    }
-    if (this.orbitControls) {
-      this.orbitControls.dispose();
-    }
-
-    // Clean up scene
-    if (this.sceneManager) {
-      this.sceneManager.clear();
-    }
-
-    // Clean up renderer
-    if (this.renderer) {
-      this.renderer.dispose();
-    }
-
-    // Save state
-    this.savePersistedState();
   }
 }
 
-// Start the editor
-new Editor();
+// Initialize editor when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  new Editor();
+});

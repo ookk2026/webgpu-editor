@@ -89,8 +89,8 @@ export class SceneManager {
       );
     }
 
-    const camera = new PerspectiveCamera(75, aspect, 0.1, 1000);
-    camera.position.set(5, 5, 5);
+    const camera = new PerspectiveCamera(50, aspect, 0.1, 1000);
+    camera.position.set(3, 3, 5);
     camera.lookAt(0, 0, 0);
     camera.name = '主摄像机';
     return camera;
