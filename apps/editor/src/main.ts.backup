@@ -47,7 +47,7 @@ import {
   Material
 } from 'three';
 
-// Editor state
+// 编辑器状态
 interface EditorState {
   selectedObject: Object3D | null;
   transformMode: 'translate' | 'rotate' | 'scale';
@@ -55,7 +55,7 @@ interface EditorState {
   transformDragging: boolean;
 }
 
-// Scene tree filter state
+// 场景树筛选状态
 interface TreeFilterState {
   lights: boolean;
   models: boolean;
@@ -80,7 +80,7 @@ class Editor {
     transformDragging: false
   };
 
-  // Scene tree filter state (all shown by default)
+  // 场景树筛选状态（默认全部显示）
   private treeFilter: TreeFilterState = {
     lights: true,
     models: true,
@@ -88,25 +88,25 @@ class Editor {
     cameras: true
   };
 
-  // Command manager (undo/redo)
+  // 命令管理器（撤销/重做）
   private commandManager = new CommandManager({ debug: false });
   
-  // Scene tree event listeners bound flag
+  // 场景树事件监听器是否已绑定
   private treeEventListenersBound = false;
   
-  // Scene tree collapse state persistence
+  // 场景树折叠状态持久化
   private collapsedObjects: Set<string> = new Set();
   
-  // Directional light helper mapping
+  // 方向光辅助对象映射
   private directionalLightHelpers: Map<string, { helper: Object3D; gizmo: TransformControls }> = new Map();
   
-  // Selected object wireframe bounding box
+  // 选中对象线框包围盒
   private selectionBox: BoxHelper | null = null;
   
-  // Property panel state cache
+  // 属性面板状态缓存
   private propertyPanelState: Map<string, Record<string, any>> = new Map();
   
-  // Store all event listener cleanup functions
+  // 存储所有事件监听器的清理函数
   private eventListeners: (() => void)[] = [];
 
   private viewport: HTMLElement;
@@ -115,7 +115,7 @@ class Editor {
   private statusObjects: HTMLElement;
   private statusRender: HTMLElement;
   
-  // Spotlight target helper
+  // 聚光灯目标点辅助对象
   private spotLightTargetHelper: { mesh: Mesh; gizmo: TransformControls; line: Line } | null = null;
 
   constructor() {
@@ -134,12 +134,12 @@ class Editor {
 
   private async init(): Promise<void> {
     try {
-      // Create canvas
+      // 创建 canvas
       const canvas = document.createElement('canvas');
       this.viewport.appendChild(canvas);
       console.log('[Editor] Canvas created');
       
-      // Initialize renderer
+      // 初始化渲染器
       this.renderer = new Renderer(canvas);
       const rendererOk = await this.renderer.init();
       if (!rendererOk) {
@@ -147,19 +147,19 @@ class Editor {
       }
       console.log('[Editor] Renderer initialized');
 
-      // Initialize scene manager
+      // 初始化场景管理器
       this.sceneManager = new SceneManager();
       this.sceneManager.createDefaultScene();
       console.log('[Editor] SceneManager initialized');
 
-      // Setup orbit controls
+      // 设置轨道控制器
       const camera = this.sceneManager.getCamera();
       this.orbitControls = new OrbitControls(camera, this.renderer.getCanvas());
       this.orbitControls.enableDamping = true;
       this.orbitControls.dampingFactor = 0.05;
       console.log('[Editor] OrbitControls initialized');
 
-      // Setup transform controls
+      // 设置变换控制器
       this.transformControls = new TransformControls(camera, this.renderer.getCanvas());
       this.transformControls.addEventListener('dragging-changed', (e) => {
         const isDragging = Boolean(e.value);
@@ -172,18 +172,18 @@ class Editor {
       this.sceneManager.getScene().add(this.transformControls);
       console.log('[Editor] TransformControls initialized');
 
-      // Hide loading overlay
+      // 隐藏加载界面
       this.overlay.classList.add('hidden');
       console.log('[Editor] Initialization complete');
 
-      // Start render loop
+      // 开始渲染循环
       this.animate();
     } catch (error) {
       console.error('[Editor] Initialization failed:', error);
       this.overlay.innerHTML = `<div style="color: red; padding: 20px;">
-        <h3>Initialization Failed</h3>
+        <h3>初始化失败</h3>
         <p>${error instanceof Error ? error.message : 'Unknown error'}</p>
-        <p>Please check browser console for details</p>
+        <p>请检查浏览器控制台获取详细信息</p>
       </div>`;
     }
   }
@@ -193,61 +193,61 @@ class Editor {
 
     if (!this.sceneManager) return;
 
-    // Update orbit controls
+    // 更新轨道控制器
     if (this.orbitControls) {
       this.orbitControls.update();
     }
 
-    // Update directional light helpers
+    // 更新方向光辅助对象
     this.syncDirectionalLightTargets();
 
-    // Update spotlight target helper position
+    // 更新聚光灯目标点辅助线位置
     this.updateSpotLightTarget();
 
-    // Update selection box
+    // 更新选中框
     this.updateSelectionBox();
 
-    // Render scene
+    // 渲染场景
     this.renderer.render(this.sceneManager.getScene(), this.sceneManager.getCamera());
 
-    // Update status bar
+    // 更新状态栏
     this.updateStatusBar();
   }
 
   private updateStatusBar(): void {
     if (!this.sceneManager) return;
 
-    // Update FPS
+    // 更新FPS
     const info = this.renderer.getInfo();
     this.statusFPS.textContent = `${Math.round(info.render.frame)} FPS`;
 
-    // Update object count
+    // 更新对象数量
     let objectCount = 0;
     this.sceneManager.getScene().traverse((obj) => {
       if (obj.type === 'Mesh') objectCount++;
     });
     this.statusObjects.textContent = `${objectCount} objects`;
 
-    // Update render info
+    // 更新渲染信息
     this.statusRender.textContent = `WebGPU`;
   }
 
   private setupUI(): void {
-    // Setup toolbar buttons
+    // 设置工具栏按钮
     this.setupToolbarButtons();
     
-    // Setup scene tree
+    // 设置场景树
     this.refreshSceneTree();
     
-    // Setup property panel
+    // 设置属性面板
     this.setupPropertyInputs();
     
-    // Setup draggable toolbars
+    // 设置可拖拽工具栏
     this.setupDraggableToolbars();
   }
 
   private setupToolbarButtons(): void {
-    // Transform mode buttons - HTML uses tool-* IDs
+    // 变换模式按钮 - HTML uses tool-* IDs
     const translateBtn = document.getElementById('tool-translate');
     const rotateBtn = document.getElementById('tool-rotate');
     const scaleBtn = document.getElementById('tool-scale');
@@ -256,49 +256,49 @@ class Editor {
     rotateBtn?.addEventListener('click', () => this.setTransformMode('rotate'));
     scaleBtn?.addEventListener('click', () => this.setTransformMode('scale'));
 
-    // Space toggle button - HTML uses tool-local
+    // 空间切换按钮 - HTML uses tool-local
     const localWorldBtn = document.getElementById('tool-local');
     localWorldBtn?.addEventListener('click', () => this.toggleSpace());
 
-    // Add primitive buttons
+    // 添加基本体按钮
     const addCubeBtn = document.getElementById('btn-add-cube');
     const addSphereBtn = document.getElementById('btn-add-sphere');
 
     addCubeBtn?.addEventListener('click', () => this.addPrimitive('Box'));
     addSphereBtn?.addEventListener('click', () => this.addPrimitive('Sphere'));
 
-    // Import model button
+    // 导入模型按钮
     const importBtn = document.getElementById('btn-import-model');
     importBtn?.addEventListener('click', () => this.importModel());
 
-    // New scene button - HTML uses btn-new
+    // 新建场景按钮 - HTML uses btn-new
     const newSceneBtn = document.getElementById('btn-new');
     newSceneBtn?.addEventListener('click', () => this.newScene());
 
-    // Open scene button
+    // 打开场景按钮
     const openBtn = document.getElementById('btn-open');
     openBtn?.addEventListener('click', () => this.openScene());
 
-    // Save scene button
+    // 保存场景按钮
     const saveBtn = document.getElementById('btn-save');
     saveBtn?.addEventListener('click', () => this.saveScene());
 
-    // Undo/redo buttons
+    // 撤销/重做按钮
     const undoBtn = document.getElementById('btn-undo');
     const redoBtn = document.getElementById('btn-redo');
 
     undoBtn?.addEventListener('click', () => this.undo());
     redoBtn?.addEventListener('click', () => this.redo());
 
-    // Play button
+    // 播放按钮
     const playBtn = document.getElementById('btn-play');
     playBtn?.addEventListener('click', () => this.togglePlay());
 
-    // Publish button
+    // 发布按钮
     const publishBtn = document.getElementById('btn-publish');
     publishBtn?.addEventListener('click', () => this.publish());
 
-    // Scene tree filter buttons - HTML uses btn-filter-*
+    // 场景树筛选按钮 - HTML uses btn-filter-*
     const filterLightsBtn = document.getElementById('btn-filter-lights');
     const filterModelsBtn = document.getElementById('btn-filter-models');
     const filterHelpersBtn = document.getElementById('btn-filter-helpers');
@@ -328,7 +328,7 @@ class Editor {
       this.refreshSceneTree();
     });
 
-    // Expand/collapse all buttons
+    // 展开/收起全部按钮
     const expandAllBtn = document.getElementById('btn-expand-all');
     const collapseAllBtn = document.getElementById('btn-collapse-all');
 
@@ -347,7 +347,7 @@ class Editor {
       this.refreshSceneTree();
     });
 
-    // Grid toggle button
+    // 网格切换按钮
     const toggleGridBtn = document.getElementById('btn-toggle-grid');
     toggleGridBtn?.addEventListener('click', () => {
       if (!this.sceneManager) return;
@@ -356,7 +356,7 @@ class Editor {
       toggleGridBtn.classList.toggle('active', !isVisible);
     });
 
-    // Light add buttons
+    // 灯光添加按钮
     const addAmbientBtn = document.getElementById('btn-add-ambient');
     const addDirectionalBtn = document.getElementById('btn-add-directional');
     const addPointBtn = document.getElementById('btn-add-point');
@@ -369,16 +369,16 @@ class Editor {
     addSpotBtn?.addEventListener('click', () => this.addLight('spot'));
     addHemisphereBtn?.addEventListener('click', () => this.addLight('hemisphere'));
 
-    // Initialize button states
+    // 初始化按钮状态
     this.updateToolbarState();
     
-    // Initialize filter button states
+    // 初始化筛选按钮状态
     filterLightsBtn?.classList.toggle('active', this.treeFilter.lights);
     filterModelsBtn?.classList.toggle('active', this.treeFilter.models);
     filterHelpersBtn?.classList.toggle('active', this.treeFilter.helpers);
     filterCamerasBtn?.classList.toggle('active', this.treeFilter.cameras);
     
-    // Initialize grid button state
+    // 初始化网格按钮状态
     if (this.sceneManager) {
       toggleGridBtn?.classList.toggle('active', this.sceneManager.isGridHelperVisible());
     }
@@ -406,7 +406,7 @@ class Editor {
   }
 
   private updateToolbarState(): void {
-    // Update transform mode button states - HTML uses tool-* IDs
+    // 更新变换模式按钮状态 - HTML uses tool-* IDs
     document.getElementById('tool-translate')?.classList.toggle('active', this.state.transformMode === 'translate');
     document.getElementById('tool-rotate')?.classList.toggle('active', this.state.transformMode === 'rotate');
     document.getElementById('tool-scale')?.classList.toggle('active', this.state.transformMode === 'scale');
@@ -416,30 +416,30 @@ class Editor {
     const canvas = this.renderer?.getCanvas();
     if (!canvas) return;
 
-    // Prevent text selection during drag
+    // 防止拖拽时的文本选择
     canvas.style.userSelect = 'none';
     canvas.style.webkitUserSelect = 'none';
 
-    // Pointer down for selection - use capture: false to let TransformControls handle first
+    // 使用捕获阶段处理选择，让 TransformControls 先处理事件
     const pointerDown = (e: PointerEvent) => this.handleViewportPointerDown(e);
     canvas.addEventListener('pointerdown', pointerDown, { capture: false });
     this.eventListeners.push(() => canvas.removeEventListener('pointerdown', pointerDown));
 
-    // Window resize
+    // 窗口大小调整
     const resize = () => this.handleResize();
     window.addEventListener('resize', resize);
     this.eventListeners.push(() => window.removeEventListener('resize', resize));
 
-    // Transform controls events
+    // 变换控制器事件 - 完全重写
     if (this.transformControls) {
-      // Drag start - record initial state
+      // 拖拽开始时记录初始状态
       this.transformControls.addEventListener('mouseDown', () => {
         console.log('[Editor] Transform drag started');
         this.state.transformDragging = true;
         if (this.orbitControls) {
           this.orbitControls.enabled = false;
         }
-        // Record pre-transform state for undo
+        // 记录变换前的状态用于撤销
         if (this.state.selectedObject) {
           const obj = this.state.selectedObject;
           obj.userData.transformStart = {
@@ -450,14 +450,14 @@ class Editor {
         }
       });
 
-      // Drag end - create undo command
+      // 拖拽结束时创建撤销命令
       this.transformControls.addEventListener('mouseUp', () => {
         console.log('[Editor] Transform drag ended');
         this.state.transformDragging = false;
         if (this.orbitControls) {
           this.orbitControls.enabled = true;
         }
-        // Create undo command
+        // 创建撤销命令
         if (this.state.selectedObject && this.sceneManager) {
           const obj = this.state.selectedObject;
           const startData = obj.userData.transformStart;
@@ -474,14 +474,14 @@ class Editor {
         }
       });
 
-      // Update property panel during transform
+      // 变换过程中更新属性面板
       this.transformControls.addEventListener('change', () => {
         if (this.state.selectedObject) {
           this.updateTransformInputs(this.state.selectedObject);
         }
       });
 
-      // Dragging state change (compatibility)
+      // 拖拽状态变化（兼容性）
       this.transformControls.addEventListener('dragging-changed', (e) => {
         const isDragging = Boolean((e as any).value);
         this.state.transformDragging = isDragging;
@@ -490,11 +490,31 @@ class Editor {
         }
       });
     }
+      this.transformControls.addEventListener('mouseDown', transformStart);
+
+      const transformEnd = () => {
+        if (this.state.selectedObject) {
+          const obj = this.state.selectedObject;
+          const start = obj.userData.transformStart;
+          if (start) {
+            const command = new TransformCommand(
+              obj,
+              start.position,
+              start.rotation,
+              start.scale
+            );
+            this.commandManager.execute(command);
+            delete obj.userData.transformStart;
+          }
+        }
+      };
+      this.transformControls.addEventListener('mouseUp', transformEnd);
+    }
   }
 
   private setupGlobalKeyboardListeners(): void {
     const keyDown = (e: KeyboardEvent) => {
-      // Undo/redo
+      // 撤销/重做
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         if (e.shiftKey) {
           this.redo();
@@ -503,7 +523,7 @@ class Editor {
         }
       }
 
-      // Transform mode shortcuts
+      // 变换模式快捷键
       switch (e.key.toLowerCase()) {
         case 't':
           this.setTransformMode('translate');
@@ -534,6 +554,7 @@ class Editor {
     if (!this.state.selectedObject || !this.sceneManager) return;
 
     const obj = this.state.selectedObject;
+    // Fix: Correct parameter order for RemoveObjectCommand
     const command = new RemoveObjectCommand(this.sceneManager, obj);
     this.commandManager.execute(command);
 
@@ -560,29 +581,26 @@ class Editor {
     }
   }
 
-  /**
-   * Handle viewport pointer down for object selection
-   * Critical fix: Check if clicking on TransformControls handles before selecting
-   */
   private handleViewportPointerDown(e: PointerEvent): void {
     if (!this.sceneManager || !this.transformControls) return;
 
-    // Get click position
+    // 获取点击位置
     const canvas = this.renderer.getCanvas();
     const rect = canvas.getBoundingClientRect();
     const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
-    // CRITICAL FIX: Check if clicking on TransformControls handles first
+    // 首先检查是否点击了 TransformControls 手柄
+    // TransformControls 内部有自己的射线检测，我们检查点击位置是否在手柄附近
     this.raycaster.setFromCamera(new Vector2(mouseX, mouseY), this.sceneManager.getCamera());
 
-    // Get all possible intersects
+    // 获取所有可能与 TransformControls 相交的对象
     const allIntersects = this.raycaster.intersectObjects(
       this.sceneManager.getScene().children,
       true
     );
 
-    // Check if clicked on TransformControls any part
+    // 检查是否点击了 TransformControls 的任何部分
     const clickedOnTransformControls = allIntersects.some(hit => 
       this.isTransformControlsChild(hit.object)
     );
@@ -592,7 +610,7 @@ class Editor {
       return;
     }
 
-    // Filter out helpers, find actual scene object
+    // 过滤掉辅助对象，找到实际场景对象
     const validIntersects = allIntersects.filter(i => 
       !this.isGridHelperChild(i.object) &&
       !this.isDirectionalLightHelper(i.object) &&
@@ -602,7 +620,7 @@ class Editor {
     if (validIntersects.length > 0) {
       let target = validIntersects[0].object;
       
-      // Traverse up to direct child (not Scene's child)
+      // 向上查找到直接子对象（不是 Scene 的子对象）
       while (target.parent && target.parent.type !== 'Scene') {
         if (target.parent.type === 'Group') {
           target = target.parent;
@@ -614,7 +632,7 @@ class Editor {
       console.log('[Editor] Selected object:', target.name || target.type);
       this.selectObject(target);
     } else {
-      // Clicked on empty space - keep current selection (don't deselect)
+      // 点击空白处 - 保持当前选择（不移除）
       console.log('[Editor] Clicked on empty space, keeping current selection');
     }
   }
@@ -626,19 +644,16 @@ class Editor {
     return false;
   }
 
-  /**
-   * Select an object and attach TransformControls
-   */
-  public selectObject(obj: Object3D | null): void {
+  private selectObject(obj: Object3D | null): void {
     this.state.selectedObject = obj;
 
-    // Update transform controls
+    // 更新变换控制器
     if (this.transformControls) {
       if (obj) {
         this.transformControls.visible = true;
         this.transformControls.enabled = true;
         this.transformControls.attach(obj);
-        // Force handle size - use larger value for visibility
+        // 强制设置手柄大小 - 使用较大的值确保可见
         this.transformControls.setSize(1.5);
         console.log('[Editor] TransformControls attached to', obj.name || obj.type);
       } else {
@@ -648,13 +663,20 @@ class Editor {
       }
     }
 
-    // Update property panel
+    // 更新属性面板
     this.updatePropertyInputs();
 
-    // Update scene tree selection state
+    // 更新场景树选中状态
     this.updateSceneTreeSelection();
 
-    // Clear directional light helpers
+    // 更新选中框 - 暂时禁用，避免遮挡TransformControls
+    // if (obj) {
+    //   this.createSelectionBox(obj);
+    // } else {
+    //   this.clearSelectionBox();
+    // }
+
+    // 处理灯光辅助对象
     this.clearDirectionalLightHelpers();
     this.clearSpotLightTargetHelper();
 
@@ -664,7 +686,7 @@ class Editor {
       this.setupSpotLightTargetHelper(obj);
     }
 
-    // Update UI
+    // 更新UI
     const deleteBtn = document.getElementById('btn-delete');
     if (deleteBtn) {
       deleteBtn.style.display = obj ? 'block' : 'none';
@@ -696,7 +718,7 @@ class Editor {
       'scale-x', 'scale-y', 'scale-z'
     ];
 
-    // Store pre-transform state
+    // 存储变换前的状态
     let oldPosition = new Vector3();
     let oldRotation = new Euler();
     let oldScale = new Vector3();
@@ -705,7 +727,7 @@ class Editor {
       const input = document.getElementById(id) as HTMLInputElement;
       if (!input) return;
 
-      // Record old value on focus
+      // 开始编辑时记录旧值
       input.addEventListener('focus', () => {
         if (this.state.selectedObject) {
           oldPosition.copy(this.state.selectedObject.position);
@@ -714,10 +736,10 @@ class Editor {
         }
       });
 
-      // Real-time update
+      // 实时更新
       input.addEventListener('input', () => this.updateTransformFromInputs());
 
-      // Create undo command on change
+      // 完成编辑时创建撤销命令
       input.addEventListener('change', () => {
         if (this.state.selectedObject && this.sceneManager) {
           const obj = this.state.selectedObject;
@@ -728,7 +750,7 @@ class Editor {
             oldScale
           );
           this.commandManager.execute(cmd);
-          // Update old values for next edit
+          // 更新旧值为当前值，用于下次编辑
           oldPosition.copy(obj.position);
           oldRotation.copy(obj.rotation);
           oldScale.copy(obj.scale);
@@ -738,13 +760,13 @@ class Editor {
   }
 
   private setupLightPropertyInputs(): void {
-    // Color
+    // 颜色
     const colorInput = document.getElementById('light-color') as HTMLInputElement;
     if (colorInput) {
       colorInput.addEventListener('change', () => this.updateLightFromInputs());
     }
 
-    // Intensity - sync slider and number input
+    // 强度 - 滑块和数字框同步
     const intensitySlider = document.getElementById('light-intensity-slider') as HTMLInputElement;
     const intensityInput = document.getElementById('light-intensity') as HTMLInputElement;
     if (intensitySlider && intensityInput) {
@@ -758,7 +780,7 @@ class Editor {
       });
     }
 
-    // Distance
+    // 距离
     const distanceSlider = document.getElementById('light-distance-slider') as HTMLInputElement;
     const distanceInput = document.getElementById('light-distance') as HTMLInputElement;
     if (distanceSlider && distanceInput) {
@@ -772,7 +794,7 @@ class Editor {
       });
     }
 
-    // Angle
+    // 角度
     const angleSlider = document.getElementById('light-angle-slider') as HTMLInputElement;
     const angleInput = document.getElementById('light-angle') as HTMLInputElement;
     if (angleSlider && angleInput) {
@@ -786,7 +808,7 @@ class Editor {
       });
     }
 
-    // Penumbra
+    // 半影
     const penumbraSlider = document.getElementById('light-penumbra-slider') as HTMLInputElement;
     const penumbraInput = document.getElementById('light-penumbra') as HTMLInputElement;
     if (penumbraSlider && penumbraInput) {
@@ -800,7 +822,7 @@ class Editor {
       });
     }
 
-    // Decay
+    // 衰减
     const decaySlider = document.getElementById('light-decay-slider') as HTMLInputElement;
     const decayInput = document.getElementById('light-decay') as HTMLInputElement;
     if (decaySlider && decayInput) {
@@ -816,19 +838,19 @@ class Editor {
   }
 
   private setupMaterialPropertyInputs(): void {
-    // Color input
+    // 颜色输入
     const colorInput = document.getElementById('material-color') as HTMLInputElement;
     if (colorInput) {
       colorInput.addEventListener('change', () => this.updateMaterialFromInputs());
     }
 
-    // Emissive input
+    // 自发光输入
     const emissiveInput = document.getElementById('material-emissive') as HTMLInputElement;
     if (emissiveInput) {
       emissiveInput.addEventListener('change', () => this.updateMaterialFromInputs());
     }
 
-    // Roughness - sync slider and number input
+    // 粗糙度 - 滑块和数字框同步
     const roughnessSlider = document.getElementById('material-roughness-slider') as HTMLInputElement;
     const roughnessInput = document.getElementById('material-roughness') as HTMLInputElement;
     if (roughnessSlider && roughnessInput) {
@@ -842,7 +864,7 @@ class Editor {
       });
     }
 
-    // Metalness - sync slider and number input
+    // 金属度 - 滑块和数字框同步
     const metalnessSlider = document.getElementById('material-metalness-slider') as HTMLInputElement;
     const metalnessInput = document.getElementById('material-metalness') as HTMLInputElement;
     if (metalnessSlider && metalnessInput) {
@@ -856,7 +878,7 @@ class Editor {
       });
     }
 
-    // Opacity
+    // 不透明度
     const opacitySlider = document.getElementById('material-opacity-slider') as HTMLInputElement;
     const opacityInput = document.getElementById('material-opacity') as HTMLInputElement;
     if (opacitySlider && opacityInput) {
@@ -870,19 +892,19 @@ class Editor {
       });
     }
 
-    // Transparent toggle
+    // 透明开关
     const transparentCheck = document.getElementById('material-transparent') as HTMLInputElement;
     if (transparentCheck) {
       transparentCheck.addEventListener('change', () => this.updateMaterialFromInputs());
     }
 
-    // Wireframe toggle
+    // 线框开关
     const wireframeCheck = document.getElementById('material-wireframe') as HTMLInputElement;
     if (wireframeCheck) {
       wireframeCheck.addEventListener('change', () => this.updateMaterialFromInputs());
     }
 
-    // Clearcoat
+    // 清漆层
     const clearcoatSlider = document.getElementById('material-clearcoat-slider') as HTMLInputElement;
     const clearcoatInput = document.getElementById('material-clearcoat') as HTMLInputElement;
     if (clearcoatSlider && clearcoatInput) {
@@ -934,9 +956,6 @@ class Editor {
     camera.updateProjectionMatrix();
   }
 
-  /**
-   * Update property panel visibility based on selection
-   */
   private updatePropertyInputs(): void {
     const propertiesContent = document.getElementById('properties');
     
@@ -944,7 +963,7 @@ class Editor {
       const noSelection = document.getElementById('no-selection');
       if (propertiesContent) propertiesContent.style.display = 'block';
       if (noSelection) noSelection.style.display = 'block';
-      // Hide all property panels
+      // 隐藏所有属性面板
       const transformProperties = document.getElementById('transform-properties');
       const lightProperties = document.getElementById('light-properties');
       const materialProperties = document.getElementById('material-properties');
@@ -956,13 +975,13 @@ class Editor {
       return;
     }
 
-    // Show property container
+    // 显示属性容器
     if (propertiesContent) propertiesContent.style.display = 'block';
 
     const noSelection = document.getElementById('no-selection');
     if (noSelection) noSelection.style.display = 'none';
 
-    // Show property content
+    // 显示属性内容
     const transformProperties = document.getElementById('transform-properties');
     const lightProperties = document.getElementById('light-properties');
     const materialProperties = document.getElementById('material-properties');
@@ -975,25 +994,37 @@ class Editor {
 
     const obj = this.state.selectedObject;
 
-    // Update transform inputs
+    // 更新变换输入
     this.updateTransformInputs(obj);
 
-    // Update light properties
+    // 更新灯光属性
     if (obj instanceof Light) {
       if (lightProperties) lightProperties.style.display = 'block';
       this.updateLightInputs(obj);
     }
 
-    // Update material properties
+    // 更新材质属性
     if (obj instanceof Mesh) {
       if (materialProperties) materialProperties.style.display = 'block';
       this.updateMaterialInputs(obj);
     }
 
-    // Update camera properties
+    // 更新摄像机属性
     if (obj instanceof Camera) {
       if (cameraProperties) cameraProperties.style.display = 'block';
       this.updateCameraInputs(obj);
+    }
+
+    // 更新对象名称
+    const nameInput = document.getElementById('obj-name') as HTMLInputElement;
+    if (nameInput) {
+      nameInput.value = obj.name || obj.type;
+    }
+
+    // 更新对象类型显示
+    const typeLabel = document.getElementById('obj-type');
+    if (typeLabel) {
+      typeLabel.textContent = obj.type;
     }
   }
 
@@ -1040,13 +1071,13 @@ class Editor {
       if (intensitySlider) intensitySlider.value = light.intensity.toFixed(1);
     }
 
-    // Light type specific properties - show/hide corresponding rows
+    // 特定灯光类型的属性 - 显示/隐藏对应行
     const distanceRow = document.getElementById('light-distance-row');
     const angleRow = document.getElementById('light-angle-row');
     const penumbraRow = document.getElementById('light-penumbra-row');
     const decayRow = document.getElementById('light-decay-row');
 
-    // Hide specific properties by default
+    // 默认隐藏特定属性
     if (distanceRow) distanceRow.style.display = 'none';
     if (angleRow) angleRow.style.display = 'none';
     if (penumbraRow) penumbraRow.style.display = 'none';
@@ -1132,7 +1163,7 @@ class Editor {
       if (clearcoatSlider) clearcoatSlider.value = material.clearcoat.toFixed(2);
     }
 
-    // Show/hide clearcoat (physical material only)
+    // 显示/隐藏清漆层（仅物理材质）
     const clearcoatRow = document.getElementById('material-clearcoat-row');
     if (clearcoatRow) {
       clearcoatRow.style.display = material.clearcoat !== undefined ? 'flex' : 'none';
@@ -1152,7 +1183,7 @@ class Editor {
     const typeLabel = document.getElementById('camera-type');
 
     if (camera instanceof PerspectiveCamera) {
-      if (typeLabel) typeLabel.textContent = 'Perspective Camera';
+      if (typeLabel) typeLabel.textContent = '透视相机';
       if (fovInput) {
         fovInput.value = camera.fov.toFixed(0);
         if (fovSlider) fovSlider.value = camera.fov.toFixed(0);
@@ -1263,15 +1294,12 @@ class Editor {
       material.clearcoat = parseFloat(clearcoatInput.value) || 0;
     }
 
-    // Mark material needs update
+    // 标记材质需要更新
     material.needsUpdate = true;
   }
 
-  /**
-   * Setup draggable floating toolbars
-   */
   private setupDraggableToolbars(): void {
-    // Use inline script to add drag functionality
+    // 使用内联脚本方式添加拖拽功能
     const script = document.createElement('script');
     script.textContent = `
       (function() {
@@ -1282,7 +1310,7 @@ class Editor {
           
           toolbar.onmousedown = function(e) {
             if (e.button !== 0) return;
-            // Check if clicking button interior, if so don't drag
+            // 检查是否点击了按钮内部，如果是则不拖拽
             if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
             
             isDragging = true;
@@ -1323,7 +1351,7 @@ class Editor {
     if (!this.sceneManager) return;
 
     const mesh = this.sceneManager.createPrimitive(type);
-    // New object defaults to origin (0, 0, 0)
+    // 新建物体默认在原点 (0, 0, 0)
     mesh.position.set(0, 0, 0);
 
     const command = new AddObjectCommand(this.sceneManager, mesh);
@@ -1391,6 +1419,7 @@ class Editor {
         });
 
         if (result.success && result.object) {
+          // Fix: Correct parameter order for AddObjectCommand
           const command = new AddObjectCommand(this.sceneManager, result.object);
           this.commandManager.execute(command);
           this.refreshSceneTree();
@@ -1432,6 +1461,7 @@ class Editor {
         const data = JSON.parse(text);
         
         // TODO: Implement scene deserialization
+        // For now, just show a toast
         this.showToast('Scene loaded (TODO: implement full deserialization)');
       } catch (error) {
         console.error('Failed to load scene:', error);
@@ -1496,16 +1526,16 @@ class Editor {
               style="visibility: ${hasChildren ? 'visible' : 'hidden'}">▶</span>
         <span class="tree-icon">${icon}</span>
         <span class="tree-label">${obj.name || obj.type}</span>
-        <span class="tree-visibility ${isVisible ? 'visible' : 'hidden'}" title="Click to toggle visibility"></span>
+        <span class="tree-visibility ${isVisible ? 'visible' : 'hidden'}" title="点击切换显示/隐藏"></span>
       `;
 
-      // Click to select
+      // 点击选中
       item.addEventListener('click', (e) => {
         e.stopPropagation();
         this.selectObject(obj);
       });
 
-      // Expand/collapse
+      // 展开/折叠
       const toggle = item.querySelector('.tree-toggle');
       if (toggle && hasChildren) {
         toggle.addEventListener('click', (e) => {
@@ -1519,7 +1549,7 @@ class Editor {
         });
       }
 
-      // Visibility toggle
+      // 显示/隐藏切换
       const visibilityToggle = item.querySelector('.tree-visibility');
       if (visibilityToggle) {
         visibilityToggle.addEventListener('click', (e) => {
@@ -1553,24 +1583,24 @@ class Editor {
   }
 
   private shouldShowObject(obj: Object3D): boolean {
-    // Don't show transform controls children
+    // 不显示变换控制器子对象
     if (this.isTransformControlsChild(obj)) return false;
 
-    // Don't show grid helper children
+    // 不显示网格辅助对象
     if (this.isGridHelperChild(obj)) return false;
 
-    // Don't show camera children
+    // 不显示相机子对象
     if (this.isCameraChild(obj)) return false;
 
-    // Don't show directional light helpers
+    // 不显示方向光辅助对象
     if (this.isDirectionalLightHelper(obj)) return false;
 
-    // Don't show spotlight target helpers
+    // 不显示聚光灯目标辅助对象
     if (this.spotLightTargetHelper && 
         (obj === this.spotLightTargetHelper.mesh || 
          obj === this.spotLightTargetHelper.line)) return false;
 
-    // Filter by type
+    // 根据筛选条件
     if (obj instanceof Light && !this.treeFilter.lights) return false;
     if (obj instanceof Mesh && !this.treeFilter.models) return false;
     if (obj instanceof GridHelper && !this.treeFilter.helpers) return false;
@@ -1752,7 +1782,7 @@ class Editor {
 
     this.clearDirectionalLightHelpers();
 
-    // Create target visualization and manipulator
+    // 创建目标点可视化和操控器
     const targetGeometry = new ConeGeometry(0.2, 0.4, 8);
     targetGeometry.rotateX(Math.PI / 2);
     const targetMaterial = new MeshBasicMaterial({ 
@@ -1762,13 +1792,13 @@ class Editor {
     });
     const targetMesh = new Mesh(targetGeometry, targetMaterial);
 
-    // Set initial position
+    // 设置初始位置
     const targetPos = new Vector3();
     light.target.getWorldPosition(targetPos);
     targetMesh.position.copy(targetPos);
     targetMesh.name = 'DirectionalLight Target';
 
-    // Create connecting line
+    // 创建连线
     const lineGeometry = new BufferGeometry().setFromPoints([
       light.position.clone(),
       targetPos.clone()
@@ -1777,11 +1807,11 @@ class Editor {
     const line = new Line(lineGeometry, lineMaterial);
     line.name = 'DirectionalLight Line';
 
-    // Add to scene
+    // 添加到场景
     this.sceneManager.getScene().add(targetMesh);
     this.sceneManager.getScene().add(line);
 
-    // Create TransformControls
+    // 创建TransformControls
     const gizmo = new TransformControls(
       this.sceneManager.getCamera(),
       this.renderer.getCanvas()
@@ -1790,18 +1820,18 @@ class Editor {
     gizmo.setSpace('world');
     this.sceneManager.getScene().add(gizmo);
 
-    // Store reference
+    // 存储引用
     this.directionalLightHelpers.set(light.uuid, {
       helper: targetMesh,
       gizmo
     });
 
-    // Listen for target changes
+    // 监听目标点变化
     gizmo.addEventListener('change', () => {
       light.target.position.copy(targetMesh.position);
       light.target.updateMatrixWorld();
 
-      // Update line
+      // 更新连线
       const positions = new Float32Array([
         light.position.x, light.position.y, light.position.z,
         targetMesh.position.x, targetMesh.position.y, targetMesh.position.z
@@ -1830,7 +1860,7 @@ class Editor {
       });
       data.gizmo.dispose();
 
-      // Remove line
+      // 移除连线
       const line = this.sceneManager.getScene().getObjectByName('DirectionalLight Line');
       if (line) {
         this.sceneManager.getScene().remove(line);
@@ -1849,7 +1879,7 @@ class Editor {
       const light = this.sceneManager.getScene().getObjectByProperty('uuid', uuid) as DirectionalLight;
       if (!light) continue;
 
-      // Update line position (light position may change)
+      // 更新连线位置（光源位置可能变化）
       const line = this.sceneManager.getScene().getObjectByName('DirectionalLight Line');
       if (line && line instanceof Line) {
         const positions = line.geometry.attributes.position.array as Float32Array;
@@ -1866,12 +1896,12 @@ class Editor {
 
     this.clearSpotLightTargetHelper();
 
-    // Ensure target is in scene
+    // 确保目标点在场景中
     if (light.target.parent !== this.sceneManager.getScene()) {
       this.sceneManager.getScene().add(light.target);
     }
 
-    // Create target visualization
+    // 创建目标点可视化
     const targetGeometry = new ConeGeometry(0.15, 0.3, 8);
     targetGeometry.rotateX(Math.PI / 2);
     const targetMaterial = new MeshBasicMaterial({ 
@@ -1881,13 +1911,13 @@ class Editor {
     });
     const targetMesh = new Mesh(targetGeometry, targetMaterial);
 
-    // Set position
+    // 设置位置
     const targetPos = new Vector3();
     light.target.getWorldPosition(targetPos);
     targetMesh.position.copy(targetPos);
     targetMesh.name = 'SpotLight Target';
 
-    // Create connecting line
+    // 创建连线
     const lineGeometry = new BufferGeometry().setFromPoints([
       light.position.clone(),
       targetPos.clone()
@@ -1896,11 +1926,11 @@ class Editor {
     const line = new Line(lineGeometry, lineMaterial);
     line.name = 'SpotLight Line';
 
-    // Add to scene
+    // 添加到场景
     this.sceneManager.getScene().add(targetMesh);
     this.sceneManager.getScene().add(line);
 
-    // Create TransformControls
+    // 创建TransformControls
     const gizmo = new TransformControls(
       this.sceneManager.getCamera(),
       this.renderer.getCanvas()
@@ -1909,10 +1939,10 @@ class Editor {
     gizmo.setSpace('world');
     this.sceneManager.getScene().add(gizmo);
 
-    // Store reference
+    // 存储引用
     this.spotLightTargetHelper = { mesh: targetMesh, gizmo, line };
 
-    // Listen for target changes
+    // 监听目标点变化
     gizmo.addEventListener('change', () => {
       light.target.position.copy(targetMesh.position);
       light.target.updateMatrixWorld();
@@ -1951,12 +1981,12 @@ class Editor {
 
     const { mesh, line } = this.spotLightTargetHelper;
 
-    // Sync target position
+    // 同步目标点位置
     const targetPos = new Vector3();
     light.target.getWorldPosition(targetPos);
     mesh.position.copy(targetPos);
 
-    // Update line - connect light position to target
+    // 更新连线 - 连接光源位置到目标点
     const positions = line.geometry.attributes.position.array as Float32Array;
     positions[0] = light.position.x;
     positions[1] = light.position.y;
@@ -2000,16 +2030,16 @@ class Editor {
   }
 
   private dispose(): void {
-    // Clean up all event listeners
+    // 清理所有事件监听器
     this.eventListeners.forEach(cleanup => cleanup());
     this.eventListeners = [];
 
-    // Clean up helpers
+    // 清理辅助对象
     this.clearDirectionalLightHelpers();
     this.clearSpotLightTargetHelper();
     this.clearSelectionBox();
 
-    // Clean up controllers
+    // 清理控制器
     if (this.transformControls) {
       this.transformControls.dispose();
     }
@@ -2017,20 +2047,19 @@ class Editor {
       this.orbitControls.dispose();
     }
 
-    // Clean up scene
+    // 清理场景
     if (this.sceneManager) {
       this.sceneManager.clear();
     }
 
-    // Clean up renderer
+    // 清理渲染器
     if (this.renderer) {
       this.renderer.dispose();
     }
 
-    // Save state
+    // 保存状态
     this.savePersistedState();
   }
 }
 
-// Start the editor
 new Editor();
