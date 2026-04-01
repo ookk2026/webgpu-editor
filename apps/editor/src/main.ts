@@ -204,6 +204,9 @@ class Editor {
     // 更新聚光灯目标点辅助线位置
     this.updateSpotLightTarget();
 
+    // 更新选中框
+    this.updateSelectionBox();
+
     // 渲染场景
     this.renderer.render(this.sceneManager.getScene(), this.sceneManager.getCamera());
 
@@ -605,6 +608,8 @@ class Editor {
         this.transformControls.visible = true;
         this.transformControls.enabled = true;
         this.transformControls.attach(obj);
+        // 强制设置一个合适的尺寸
+        this.transformControls.setSize(1);
       } else {
         this.transformControls.detach();
         this.transformControls.visible = false;
@@ -620,7 +625,6 @@ class Editor {
     // 更新选中框
     if (obj) {
       this.createSelectionBox(obj);
-      this.adjustTransformControlsSize();
     } else {
       this.clearSelectionBox();
     }
