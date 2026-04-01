@@ -1,0 +1,1323 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebGPU Editor - Complete Post Processing</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0a0a0a; }
+    
+    #app { display: flex; flex-direction: column; width: 100%; height: 100%; }
+    
+    /* 工具栏 */
+    #toolbar { 
+      height: 48px; 
+      background: linear-gradient(180deg, #2a2a2a 0%, #222 100%); 
+      border-bottom: 1px solid #333; 
+      display: flex; 
+      align-items: center; 
+      padding: 0 16px; 
+      gap: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+    #toolbar button { 
+      padding: 7px 14px; 
+      background: #383838; 
+      color: #e0e0e0; 
+      border: 1px solid #444; 
+      border-radius: 6px; 
+      cursor: pointer; 
+      font-size: 12px; 
+      transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    #toolbar button:hover { background: #444; border-color: #555; }
+    #toolbar button.primary { 
+      background: linear-gradient(180deg, #0e8add 0%, #0a6cb5 100%);
+      border-color: #0e8add;
+      color: white;
+    }
+    #toolbar button.primary:hover { background: linear-gradient(180deg, #1196ee 0%, #0b7ac9 100%); }
+    #toolbar button:disabled { opacity: 0.4; cursor: not-allowed; }
+    #toolbar .separator { width: 1px; height: 24px; background: #3a3a3a; margin: 0 4px; }
+    
+    /* 主布局 */
+    #main { flex: 1; display: flex; overflow: hidden; }
+    
+    /* 左侧面板 */
+    #left { width: 260px; background: #1a1a1a; border-right: 1px solid #2a2a2a; display: flex; flex-direction: column; }
+    .panel-header { 
+      height: 36px; 
+      background: linear-gradient(180deg, #252525 0%, #1f1f1f 100%); 
+      display: flex; 
+      align-items: center; 
+      padding: 0 14px; 
+      font-size: 12px; 
+      font-weight: 600; 
+      color: #ccc; 
+      border-bottom: 1px solid #2a2a2a;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .panel-content { flex: 1; overflow: auto; padding: 10px; }
+    
+    /* 预设列表 */
+    .preset-item { 
+      padding: 10px 12px; 
+      margin-bottom: 6px;
+      cursor: pointer; 
+      border-radius: 6px; 
+      background: #222;
+      border: 1px solid #2a2a2a;
+      transition: all 0.15s;
+    }
+    .preset-item:hover { 
+      background: #2a2a2a; 
+      border-color: #333;
+    }
+    .preset-item.active { 
+      background: rgba(14, 138, 221, 0.15); 
+      border-color: #0e8add;
+    }
+    .preset-name { font-size: 12px; font-weight: 500; color: #ddd; margin-bottom: 3px; }
+    .preset-desc { font-size: 10px; color: #777; }
+    .preset-category { 
+      font-size: 9px; 
+      color: #0e8add; 
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 6px;
+    }
+    
+    /* 场景树 */
+    .tree-item { 
+      padding: 7px 10px; 
+      cursor: pointer; 
+      border-radius: 4px; 
+      display: flex; 
+      align-items: center; 
+      gap: 8px; 
+      font-size: 12px; 
+      color: #aaa;
+      margin-bottom: 2px;
+      transition: all 0.15s;
+    }
+    .tree-item:hover { background: rgba(255,255,255,0.05); }
+    .tree-item.selected { 
+      background: rgba(14, 138, 221, 0.2); 
+      color: #6cc4ff;
+    }
+    .tree-item .icon { font-size: 14px; }
+    .tree-item .actions { margin-left: auto; display: none; gap: 4px; }
+    .tree-item:hover .actions { display: flex; }
+    
+    /* 视口 */
+    #center { flex: 1; position: relative; background: #050505; }
+    #canvas { width: 100%; height: 100%; display: block; }
+    
+    #viewport-tools { 
+      position: absolute; 
+      top: 14px; 
+      left: 50%; 
+      transform: translateX(-50%); 
+      display: flex; 
+      gap: 6px; 
+      padding: 6px; 
+      background: rgba(30, 30, 30, 0.95); 
+      border-radius: 10px; 
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    #viewport-tools button { 
+      width: 38px; 
+      height: 38px; 
+      background: transparent; 
+      border: none; 
+      color: #888; 
+      cursor: pointer; 
+      border-radius: 8px; 
+      font-size: 17px; 
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #viewport-tools button:hover { background: rgba(255,255,255,0.08); color: #fff; }
+    #viewport-tools button.active { 
+      background: #0e8add; 
+      color: white;
+      box-shadow: 0 2px 10px rgba(14, 138, 221, 0.4);
+    }
+    
+    /* 右侧面板 */
+    #right { width: 340px; background: #1a1a1a; border-left: 1px solid #2a2a2a; display: flex; flex-direction: column; overflow-y: auto; }
+    
+    /* 属性组 */
+    .prop-group { border-bottom: 1px solid #252525; }
+    .prop-group-header { 
+      height: 34px; 
+      background: linear-gradient(180deg, #222 0%, #1e1e1e 100%); 
+      display: flex; 
+      align-items: center; 
+      padding: 0 16px; 
+      font-size: 11px; 
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #888; 
+      cursor: pointer; 
+      user-select: none;
+      border-bottom: 1px solid #2a2a2a;
+    }
+    .prop-group-header::before {
+      content: '▼';
+      margin-right: 10px;
+      font-size: 9px;
+      transition: transform 0.2s;
+    }
+    .prop-group.collapsed .prop-group-header::before { transform: rotate(-90deg); }
+    .prop-group.collapsed .prop-group-content { display: none; }
+    .prop-group-content { padding: 16px; }
+    
+    .prop-row { display: flex; align-items: center; margin-bottom: 14px; gap: 10px; }
+    .prop-row:last-child { margin-bottom: 0; }
+    .prop-label { width: 85px; color: #777; font-size: 11px; flex-shrink: 0; font-weight: 500; }
+    .prop-input { flex: 1; display: flex; gap: 6px; }
+    .prop-input input[type="number"], .prop-input input[type="text"] { 
+      flex: 1; 
+      padding: 7px 10px; 
+      background: #252525; 
+      border: 1px solid #333; 
+      border-radius: 4px; 
+      color: #ccc; 
+      font-size: 11px; 
+      width: 0;
+      transition: all 0.15s;
+    }
+    .prop-input input:focus { 
+      outline: none; 
+      border-color: #0e8add; 
+      background: #2a2a2a;
+    }
+    .prop-input input[type="color"] { 
+      width: 34px; 
+      height: 30px; 
+      padding: 2px; 
+      background: #252525; 
+      border: 1px solid #333; 
+      border-radius: 4px; 
+      cursor: pointer; 
+    }
+    .prop-input input[type="range"] { 
+      flex: 1; 
+      height: 4px;
+      -webkit-appearance: none;
+      background: #333;
+      border-radius: 2px;
+      outline: none;
+    }
+    .prop-input input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      background: #0e8add;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .prop-input input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+      background: #1196ee;
+    }
+    .prop-value { min-width: 36px; text-align: right; font-size: 10px; color: #555; }
+    
+    .checkbox-row { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+    .checkbox-row input { width: 16px; height: 16px; accent-color: #0e8add; }
+    
+    .btn-row { display: flex; gap: 8px; margin-top: 14px; }
+    .btn-row button { 
+      flex: 1; 
+      padding: 10px; 
+      background: #0e8add; 
+      color: white; 
+      border: none; 
+      border-radius: 5px; 
+      cursor: pointer; 
+      font-size: 12px;
+      transition: all 0.15s;
+    }
+    .btn-row button:hover { background: #1196ee; }
+    .btn-row button.secondary { background: #333; }
+    .btn-row button.secondary:hover { background: #3a3a3a; }
+    
+    /* 状态栏 */
+    #statusbar { 
+      height: 28px; 
+      background: linear-gradient(180deg, #0a7acc 0%, #0866a8 100%); 
+      display: flex; 
+      align-items: center; 
+      padding: 0 16px; 
+      font-size: 11px; 
+      color: white;
+      box-shadow: 0 -1px 3px rgba(0,0,0,0.2);
+    }
+    #statusbar span { margin-right: 24px; display: flex; align-items: center; gap: 6px; }
+    
+    /* 加载 */
+    #loading { 
+      position: fixed; 
+      inset: 0; 
+      background: #0a0a0a; 
+      display: flex; 
+      flex-direction: column; 
+      align-items: center; 
+      justify-content: center; 
+      color: #555; 
+      z-index: 1000; 
+    }
+    #loading.hidden { display: none; }
+    .spinner { 
+      width: 50px; 
+      height: 50px; 
+      border: 3px solid #1a1a1a; 
+      border-top-color: #0e8add; 
+      border-radius: 50%; 
+      animation: spin 1s linear infinite; 
+      margin-bottom: 20px; 
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    .empty-state { padding: 50px 20px; text-align: center; color: #444; font-size: 12px; }
+    
+    /* 标签页 */
+    .tabs { display: flex; border-bottom: 1px solid #2a2a2a; }
+    .tab { 
+      flex: 1; 
+      padding: 10px; 
+      text-align: center; 
+      font-size: 11px; 
+      color: #666; 
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .tab:hover { color: #888; background: rgba(255,255,255,0.02); }
+    .tab.active { 
+      color: #0e8add; 
+      border-bottom-color: #0e8add;
+      background: rgba(14, 138, 221, 0.05);
+    }
+    
+    #file-input { display: none; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 工具栏 -->
+    <div id="toolbar">
+      <button onclick="editor.newScene()">🗑 新建</button>
+      <button onclick="editor.loadScene()">📂 打开</button>
+      <button onclick="editor.saveScene()">💾 保存</button>
+      <div class="separator"></div>
+      <button id="btn-undo" onclick="editor.undo()" disabled>↶ 撤销</button>
+      <button id="btn-redo" onclick="editor.redo()" disabled>↷ 重做</button>
+      <div class="separator"></div>
+      <button onclick="editor.addCube()" class="primary">⧉ 立方体</button>
+      <button onclick="editor.addSphere()" class="primary">○ 球体</button>
+      <button onclick="editor.addEmissive()" class="primary">✨ 发光体</button>
+      <button onclick="editor.addLight()" class="primary">💡 光源</button>
+      <div style="flex:1"></div>
+      <button onclick="editor.importGLTF()">📁 导入</button>
+      <button onclick="editor.exportScene()">📦 导出</button>
+    </div>
+
+    <!-- 主区域 -->
+    <div id="main">
+      <!-- 左侧面板 -->
+      <div id="left">
+        <div class="tabs">
+          <div class="tab active" onclick="switchTab('presets')">预设</div>
+          <div class="tab" onclick="switchTab('scene')">场景</div>
+        </div>
+        <div class="panel-content" id="left-panel">
+          <!-- 预设列表 -->
+          <div id="presets-panel">
+            <div class="preset-category" style="font-size:10px;color:#666;margin-bottom:10px;text-transform:uppercase;">电影级</div>
+          </div>
+          <!-- 场景树 -->
+          <div id="scene-panel" style="display:none;">
+            <div class="empty-state">暂无对象</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 中间视口 -->
+      <div id="center">
+        <canvas id="canvas"></canvas>
+        <div id="viewport-tools">
+          <button id="tool-translate" class="active" title="移动 (T)">↔</button>
+          <button id="tool-rotate" title="旋转 (R)">↻</button>
+          <button id="tool-scale" title="缩放 (S)">⤢</button>
+          <button id="tool-local" title="切换坐标系">⊕</button>
+        </div>
+      </div>
+
+      <!-- 右侧面板 -->
+      <div id="right">
+        <!-- 变换 -->
+        <div class="prop-group">
+          <div class="prop-group-header">🔄 变换</div>
+          <div class="prop-group-content">
+            <div class="prop-row">
+              <span class="prop-label">位置</span>
+              <div class="prop-input">
+                <input id="pos-x" type="number" step="0.1" placeholder="X">
+                <input id="pos-y" type="number" step="0.1" placeholder="Y">
+                <input id="pos-z" type="number" step="0.1" placeholder="Z">
+              </div>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">旋转</span>
+              <div class="prop-input">
+                <input id="rot-x" type="number" step="1" placeholder="X">
+                <input id="rot-y" type="number" step="1" placeholder="Y">
+                <input id="rot-z" type="number" step="1" placeholder="Z">
+              </div>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">缩放</span>
+              <div class="prop-input">
+                <input id="scale-x" type="number" step="0.1" value="1">
+                <input id="scale-y" type="number" step="0.1" value="1">
+                <input id="scale-z" type="number" step="0.1" value="1">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 材质 -->
+        <div class="prop-group">
+          <div class="prop-group-header">🎨 材质</div>
+          <div class="prop-group-content">
+            <div class="prop-row">
+              <span class="prop-label">颜色</span>
+              <div class="prop-input">
+                <input id="mat-color" type="color" value="#888888">
+              </div>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">自发光</span>
+              <div class="prop-input">
+                <input id="mat-emissive" type="color" value="#000000">
+              </div>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">粗糙度</span>
+              <input id="mat-roughness" type="range" min="0" max="1" step="0.01" value="0.5">
+              <span class="prop-value" id="val-roughness">0.5</span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">金属度</span>
+              <input id="mat-metalness" type="range" min="0" max="1" step="0.01" value="0">
+              <span class="prop-value" id="val-metalness">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bloom -->
+        <div class="prop-group">
+          <div class="prop-group-header">✨ Bloom 辉光</div>
+          <div class="prop-group-content">
+            <div class="prop-row">
+              <label class="checkbox-row">
+                <input id="pp-bloom-enable" type="checkbox" checked>
+                <span>启用 Bloom</span>
+              </label>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">强度</span>
+              <input id="pp-bloom-strength" type="range" min="0" max="3" step="0.1" value="0.5">
+              <span class="prop-value" id="val-bloom-strength">0.5</span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">半径</span>
+              <input id="pp-bloom-radius" type="range" min="0" max="1" step="0.05" value="0.4">
+              <span class="prop-value" id="val-bloom-radius">0.4</span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">阈值</span>
+              <input id="pp-bloom-threshold" type="range" min="0" max="1" step="0.05" value="0.85">
+              <span class="prop-value" id="val-bloom-threshold">0.85</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- SSAO -->
+        <div class="prop-group">
+          <div class="prop-group-header">🔳 SSAO 环境光遮蔽</div>
+          <div class="prop-group-content">
+            <div class="prop-row">
+              <label class="checkbox-row">
+                <input id="pp-ssao-enable" type="checkbox">
+                <span>启用 SSAO</span>
+              </label>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">半径</span>
+              <input id="pp-ssao-radius" type="range" min="0" max="2" step="0.1" value="0.5">
+              <span class="prop-value" id="val-ssao-radius">0.5</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- FXAA -->
+        <div class="prop-group">
+          <div class="prop-group-header">📐 FXAA 抗锯齿</div>
+          <div class="prop-group-content">
+            <div class="prop-row">
+              <label class="checkbox-row">
+                <input id="pp-fxaa-enable" type="checkbox" checked>
+                <span>启用 FXAA</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 全局开关 -->
+        <div class="prop-group">
+          <div class="prop-group-content">
+            <div class="btn-row">
+              <button onclick="editor.saveCurrentAsPreset()">💾 保存为预设</button>
+              <button class="secondary" onclick="editor.resetPostProcessing()">↺ 重置</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 状态栏 -->
+    <div id="statusbar">
+      <span id="st-mode">🟢 就绪</span>
+      <span id="st-obj">0 个对象</span>
+      <span id="st-render">WebGL2 + PostFX</span>
+      <span id="st-fps">-- FPS</span>
+      <span id="st-effects">✨ Bloom FXAA</span>
+    </div>
+  </div>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <div>初始化编辑器与后处理系统...</div>
+  </div>
+
+  <input type="file" id="file-input" accept=".json,.gltf,.glb">
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { TransformControls } from 'three/addons/controls/TransformControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+    // FXAA Shader
+    const FXAAShader = {
+      uniforms: {
+        'tDiffuse': { value: null },
+        'resolution': { value: new THREE.Vector2(1, 1) }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform vec2 resolution;
+        varying vec2 vUv;
+        
+        #define FXAA_REDUCE_MIN (1.0 / 128.0)
+        #define FXAA_REDUCE_MUL (1.0 / 8.0)
+        #define FXAA_SPAN_MAX 8.0
+        
+        void main() {
+          vec2 texel = vec2(1.0 / resolution.x, 1.0 / resolution.y);
+          
+          vec3 rgbNW = texture2D(tDiffuse, vUv + vec2(-texel.x, -texel.y)).xyz;
+          vec3 rgbNE = texture2D(tDiffuse, vUv + vec2(texel.x, -texel.y)).xyz;
+          vec3 rgbSW = texture2D(tDiffuse, vUv + vec2(-texel.x, texel.y)).xyz;
+          vec3 rgbSE = texture2D(tDiffuse, vUv + vec2(texel.x, texel.y)).xyz;
+          vec3 rgbM = texture2D(tDiffuse, vUv).xyz;
+          
+          vec3 luma = vec3(0.299, 0.587, 0.114);
+          float lumaNW = dot(rgbNW, luma);
+          float lumaNE = dot(rgbNE, luma);
+          float lumaSW = dot(rgbSW, luma);
+          float lumaSE = dot(rgbSE, luma);
+          float lumaM = dot(rgbM, luma);
+          
+          float lumaMin = min(lumaM, min(min(lumaNW, lumaNE), min(lumaSW, lumaSE)));
+          float lumaMax = max(lumaM, max(max(lumaNW, lumaNE), max(lumaSW, lumaSE)));
+          
+          vec2 dir;
+          dir.x = -((lumaNW + lumaNE) - (lumaSW + lumaSE));
+          dir.y = ((lumaNW + lumaSW) - (lumaNE + lumaSE));
+          
+          float dirReduce = max((lumaNW + lumaNE + lumaSW + lumaSE) * (0.25 * FXAA_REDUCE_MUL), FXAA_REDUCE_MIN);
+          float rcpDirMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);
+          
+          dir = min(vec2(FXAA_SPAN_MAX, FXAA_SPAN_MAX), max(vec2(-FXAA_SPAN_MAX, -FXAA_SPAN_MAX), dir * rcpDirMin)) * texel;
+          
+          vec3 rgbA = 0.5 * (texture2D(tDiffuse, vUv + dir * (1.0 / 3.0 - 0.5)).xyz + texture2D(tDiffuse, vUv + dir * (2.0 / 3.0 - 0.5)).xyz);
+          vec3 rgbB = rgbA * 0.5 + 0.25 * (texture2D(tDiffuse, vUv + dir * -0.5).xyz + texture2D(tDiffuse, vUv + dir * 0.5).xyz);
+          
+          float lumaB = dot(rgbB, luma);
+          gl_FragColor = vec4(((lumaB < lumaMin) || (lumaB > lumaMax)) ? rgbA : rgbB, 1.0);
+        }
+      `
+    };
+
+    // ========== 预设系统 ==========
+    const EffectPresets = [
+      {
+        name: '电影级 (Cinematic)',
+        description: '高质量电影效果，适合展示',
+        category: 'cinematic',
+        config: { bloom: { enabled: true, strength: 0.8, radius: 0.6, threshold: 0.75 }, fxaa: { enabled: true } }
+      },
+      {
+        name: '科幻 (Sci-Fi)',
+        description: '强烈的霓虹辉光效果',
+        category: 'cinematic',
+        config: { bloom: { enabled: true, strength: 2.0, radius: 0.8, threshold: 0.5 }, fxaa: { enabled: true } }
+      },
+      {
+        name: '梦幻 (Dreamy)',
+        description: '柔和的辉光和泛光',
+        category: 'artistic',
+        config: { bloom: { enabled: true, strength: 1.5, radius: 1.0, threshold: 0.6 }, fxaa: { enabled: true } }
+      },
+      {
+        name: '性能优先',
+        description: '最佳帧率，最低效果',
+        category: 'performance',
+        config: { bloom: { enabled: false }, fxaa: { enabled: true } }
+      },
+      {
+        name: '全部关闭',
+        description: '禁用所有后处理',
+        category: 'performance',
+        config: { bloom: { enabled: false }, fxaa: { enabled: false } }
+      }
+    ];
+
+    // ========== 命令系统 ==========
+    class CommandManager {
+      constructor(options = {}) {
+        this.history = [];
+        this.index = -1;
+        this.maxSize = options.maxSize || 50;
+        this.listeners = [];
+      }
+      execute(cmd) {
+        if (this.index < this.history.length - 1) {
+          this.history = this.history.slice(0, this.index + 1);
+        }
+        cmd.execute();
+        this.history.push(cmd);
+        this.index++;
+        if (this.history.length > this.maxSize) {
+          this.history.shift();
+          this.index--;
+        }
+        this.notify();
+      }
+      undo() {
+        if (this.index < 0) return false;
+        this.history[this.index].undo();
+        this.index--;
+        this.notify();
+        return true;
+      }
+      redo() {
+        if (this.index >= this.history.length - 1) return false;
+        this.index++;
+        this.history[this.index].execute();
+        this.notify();
+        return true;
+      }
+      canUndo() { return this.index >= 0; }
+      canRedo() { return this.index < this.history.length - 1; }
+      notify() {
+        this.listeners.forEach(fn => fn({
+          canUndo: this.canUndo(),
+          canRedo: this.canRedo(),
+          index: this.index,
+          total: this.history.length
+        }));
+      }
+      onChange(fn) { this.listeners.push(fn); }
+      clear() { this.history = []; this.index = -1; this.notify(); }
+    }
+
+    class Command {
+      constructor(name) { this.name = name; }
+      execute() {}
+      undo() {}
+    }
+
+    class AddObjectCmd extends Command {
+      constructor(editor, object) {
+        super('添加 ' + object.name);
+        this.editor = editor;
+        this.object = object;
+        this.parent = editor.scene;
+      }
+      execute() {
+        this.parent.add(this.object);
+        this.editor.objects.push(this.object);
+        this.editor.updateTree();
+        this.editor.updateStatus();
+      }
+      undo() {
+        this.parent.remove(this.object);
+        this.editor.objects = this.editor.objects.filter(o => o !== this.object);
+        if (this.editor.selected === this.object) this.editor.select(null);
+        this.editor.updateTree();
+        this.editor.updateStatus();
+      }
+    }
+
+    class RemoveObjectCmd extends Command {
+      constructor(editor, object) {
+        super('删除 ' + object.name);
+        this.editor = editor;
+        this.object = object;
+        this.parent = object.parent;
+        this.index = this.parent.children.indexOf(object);
+      }
+      execute() {
+        this.parent.remove(this.object);
+        this.editor.objects = this.editor.objects.filter(o => o !== this.object);
+        if (this.editor.selected === this.object) this.editor.select(null);
+        this.editor.updateTree();
+        this.editor.updateStatus();
+      }
+      undo() {
+        this.parent.children.splice(this.index, 0, this.object);
+        this.object.parent = this.parent;
+        this.editor.objects.push(this.object);
+        this.editor.updateTree();
+        this.editor.updateStatus();
+      }
+    }
+
+    class TransformCmd extends Command {
+      constructor(object, oldTransform) {
+        super('变换');
+        this.object = object;
+        this.oldPos = oldTransform.position.clone();
+        this.oldRot = oldTransform.rotation.clone();
+        this.oldScale = oldTransform.scale.clone();
+        this.newPos = object.position.clone();
+        this.newRot = object.rotation.clone();
+        this.newScale = object.scale.clone();
+      }
+      execute() {
+        this.object.position.copy(this.newPos);
+        this.object.rotation.copy(this.newRot);
+        this.object.scale.copy(this.newScale);
+      }
+      undo() {
+        this.object.position.copy(this.oldPos);
+        this.object.rotation.copy(this.oldRot);
+        this.object.scale.copy(this.oldScale);
+      }
+    }
+
+    // ========== 编辑器主类 ==========
+    class Editor {
+      constructor() {
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+        this.composer = null;
+        this.orbitCtrl = null;
+        this.transformCtrl = null;
+        this.raycaster = new THREE.Raycaster();
+        this.mouse = new THREE.Vector2();
+        this.objects = [];
+        this.selected = null;
+        this.cmdMgr = new CommandManager({ maxSize: 50 });
+        this.beforeTransform = null;
+        this.ppConfig = {
+          bloom: { enabled: true, strength: 0.5, radius: 0.4, threshold: 0.85 },
+          fxaa: { enabled: true }
+        };
+        
+        this.init();
+      }
+
+      async init() {
+        try {
+          const canvas = document.getElementById('canvas');
+          
+          this.renderer = new THREE.WebGLRenderer({ 
+            canvas, 
+            antialias: false,
+            powerPreference: 'high-performance'
+          });
+          
+          this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+          this.renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+          this.renderer.shadowMap.enabled = true;
+          this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+          this.renderer.setClearColor(0x0a0a0a);
+          this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+          this.renderer.toneMappingExposure = 1.0;
+
+          this.scene = new THREE.Scene();
+          this.scene.background = new THREE.Color(0x0a0a0a);
+
+          this.camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+          this.camera.position.set(5, 5, 5);
+          this.camera.lookAt(0, 0, 0);
+
+          this.orbitCtrl = new OrbitControls(this.camera, canvas);
+          this.orbitCtrl.enableDamping = true;
+
+          this.transformCtrl = new TransformControls(this.camera, canvas);
+          this.transformCtrl.addEventListener('dragging-changed', (e) => {
+            this.orbitCtrl.enabled = !e.value;
+          });
+          this.transformCtrl.addEventListener('mouseDown', () => {
+            if (this.selected) {
+              this.beforeTransform = {
+                position: this.selected.position.clone(),
+                rotation: this.selected.rotation.clone(),
+                scale: this.selected.scale.clone()
+              };
+            }
+          });
+          this.transformCtrl.addEventListener('mouseUp', () => {
+            if (this.selected && this.beforeTransform) {
+              this.cmdMgr.execute(new TransformCmd(this.selected, this.beforeTransform));
+              this.beforeTransform = null;
+            }
+          });
+          this.transformCtrl.addEventListener('change', () => this.updateInputs());
+          this.scene.add(this.transformCtrl);
+
+          // 后处理
+          this.initPostProcessing();
+
+          // 默认光源
+          const ambient = new THREE.AmbientLight(0x404040, 0.3);
+          ambient.name = '环境光';
+          this.scene.add(ambient);
+
+          const dir = new THREE.DirectionalLight(0xffffff, 1);
+          dir.name = '主光源';
+          dir.position.set(5, 10, 7);
+          dir.castShadow = true;
+          this.scene.add(dir);
+
+          const grid = new THREE.GridHelper(20, 20, 0x333333, 0x1a1a1a);
+          grid.name = '网格';
+          this.scene.add(grid);
+
+          this.addEmissive();
+
+          // 事件
+          window.addEventListener('resize', () => this.onResize());
+          canvas.addEventListener('pointerdown', (e) => this.onPointerDown(e));
+          window.addEventListener('keydown', (e) => this.onKeyDown(e));
+          this.setupPropertyListeners();
+          this.setupPostProcessingListeners();
+
+          this.cmdMgr.onChange((state) => {
+            document.getElementById('btn-undo').disabled = !state.canUndo;
+            document.getElementById('btn-redo').disabled = !state.canRedo;
+            document.getElementById('st-history').textContent = `历史: ${state.index + 1}/${state.total}`;
+          });
+
+          this.animate();
+          this.renderPresets();
+
+          document.getElementById('loading').classList.add('hidden');
+
+          // 工具栏
+          document.getElementById('tool-translate').onclick = () => this.setTool('translate');
+          document.getElementById('tool-rotate').onclick = () => this.setTool('rotate');
+          document.getElementById('tool-scale').onclick = () => this.setTool('scale');
+          document.getElementById('tool-local').onclick = () => this.toggleSpace();
+
+          console.log('编辑器初始化完成');
+
+        } catch (err) {
+          console.error('初始化失败:', err);
+          document.querySelector('#loading div:last-child').textContent = '初始化失败: ' + err.message;
+        }
+      }
+
+      initPostProcessing() {
+        this.composer = new EffectComposer(this.renderer);
+        
+        const renderPass = new RenderPass(this.scene, this.camera);
+        this.composer.addPass(renderPass);
+
+        this.bloomPass = new UnrealBloomPass(
+          new THREE.Vector2(window.innerWidth, window.innerHeight),
+          this.ppConfig.bloom.strength,
+          this.ppConfig.bloom.radius,
+          this.ppConfig.bloom.threshold
+        );
+        this.bloomPass.enabled = this.ppConfig.bloom.enabled;
+        this.composer.addPass(this.bloomPass);
+
+        const fxaaPass = new ShaderPass(FXAAShader);
+        fxaaPass.enabled = this.ppConfig.fxaa.enabled;
+        fxaaPass.material.uniforms['resolution'].value.set(1 / window.innerWidth, 1 / window.innerHeight);
+        this.composer.addPass(fxaaPass);
+        this.fxaaPass = fxaaPass;
+
+        const outputPass = new OutputPass();
+        this.composer.addPass(outputPass);
+      }
+
+      animate() {
+        requestAnimationFrame(() => this.animate());
+        this.orbitCtrl.update();
+        this.composer.render();
+      }
+
+      onResize() {
+        const canvas = document.getElementById('canvas');
+        const parent = canvas.parentElement;
+        this.camera.aspect = parent.clientWidth / parent.clientHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(parent.clientWidth, parent.clientHeight);
+        this.composer.setSize(parent.clientWidth, parent.clientHeight);
+        if (this.fxaaPass) {
+          this.fxaaPass.material.uniforms['resolution'].value.set(1 / parent.clientWidth, 1 / parent.clientHeight);
+        }
+      }
+
+      onPointerDown(e) {
+        if (e.button !== 0) return;
+        const canvas = document.getElementById('canvas');
+        const rect = canvas.getBoundingClientRect();
+        this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+        const meshes = this.objects.filter(o => o.isMesh);
+        const intersects = this.raycaster.intersectObjects(meshes);
+        if (intersects.length > 0 && !this.transformCtrl.dragging) {
+          this.select(intersects[0].object);
+        } else if (!this.transformCtrl.dragging) {
+          this.select(null);
+        }
+      }
+
+      onKeyDown(e) {
+        if (e.target.tagName === 'INPUT') return;
+        switch(e.key.toLowerCase()) {
+          case 't': this.setTool('translate'); break;
+          case 'r': this.setTool('rotate'); break;
+          case 's': this.setTool('scale'); break;
+          case 'delete': case 'backspace': this.deleteSelected(); break;
+          case 'z': if (e.ctrlKey || e.metaKey) e.shiftKey ? this.redo() : this.undo(); break;
+          case 'd': if (e.ctrlKey || e.metaKey) { e.preventDefault(); this.duplicate(); } break;
+        }
+      }
+
+      addCube() {
+        const geo = new THREE.BoxGeometry(1, 1, 1);
+        const mat = new THREE.MeshStandardMaterial({ 
+          color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5),
+          roughness: 0.5, metalness: 0.1
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.name = '立方体 ' + (this.objects.filter(o => o.name?.includes('立方')).length + 1);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.position.set((Math.random()-0.5)*4, 0.5, (Math.random()-0.5)*4);
+        this.cmdMgr.execute(new AddObjectCmd(this, mesh));
+        this.select(mesh);
+      }
+
+      addSphere() {
+        const geo = new THREE.SphereGeometry(0.5, 32, 16);
+        const mat = new THREE.MeshStandardMaterial({ 
+          color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5),
+          roughness: 0.3, metalness: 0.2
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.name = '球体 ' + (this.objects.filter(o => o.name?.includes('球')).length + 1);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.position.set((Math.random()-0.5)*4, 0.5, (Math.random()-0.5)*4);
+        this.cmdMgr.execute(new AddObjectCmd(this, mesh));
+        this.select(mesh);
+      }
+
+      addEmissive() {
+        const geo = new THREE.BoxGeometry(1, 1, 1);
+        const mat = new THREE.MeshStandardMaterial({ 
+          color: new THREE.Color().setHSL(Math.random() * 0.1 + 0.5, 0.8, 0.5),
+          emissive: new THREE.Color().setHSL(Math.random() * 0.1 + 0.05, 1, 0.5),
+          emissiveIntensity: 2,
+          roughness: 0.2, metalness: 0.1
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.name = '发光体 ' + (this.objects.filter(o => o.name?.includes('发光')).length + 1);
+        mesh.position.set((Math.random()-0.5)*3, 1, (Math.random()-0.5)*3);
+        this.cmdMgr.execute(new AddObjectCmd(this, mesh));
+        this.select(mesh);
+      }
+
+      addLight() {
+        const light = new THREE.PointLight(0xffaa00, 2, 10);
+        light.name = '点光源 ' + (this.objects.filter(o => o.name?.includes('光源')).length + 1);
+        light.position.set(2, 3, 2);
+        const helper = new THREE.Mesh(
+          new THREE.SphereGeometry(0.1),
+          new THREE.MeshBasicMaterial({ color: 0xffaa00 })
+        );
+        helper.name = '可视化';
+        light.add(helper);
+        this.cmdMgr.execute(new AddObjectCmd(this, light));
+        this.select(light);
+      }
+
+      deleteSelected() {
+        if (this.selected) this.cmdMgr.execute(new RemoveObjectCmd(this, this.selected));
+      }
+
+      duplicate() {
+        if (!this.selected || !this.selected.isMesh) return;
+        const clone = this.selected.clone();
+        clone.name = this.selected.name + ' 副本';
+        clone.position.x += 1;
+        clone.material = this.selected.material.clone();
+        this.cmdMgr.execute(new AddObjectCmd(this, clone));
+        this.select(clone);
+      }
+
+      select(obj) {
+        this.selected = obj;
+        if (obj) {
+          this.transformCtrl.attach(obj);
+          this.transformCtrl.visible = true;
+        } else {
+          this.transformCtrl.detach();
+          this.transformCtrl.visible = false;
+        }
+        this.updateInputs();
+        this.updateTree();
+        this.updateMaterialPanel();
+      }
+
+      setTool(mode) {
+        this.transformCtrl.setMode(mode);
+        document.querySelectorAll('#viewport-tools button').forEach(b => b.classList.remove('active'));
+        document.getElementById('tool-' + mode).classList.add('active');
+      }
+
+      toggleSpace() {
+        const current = this.transformCtrl.space;
+        const next = current === 'local' ? 'world' : 'local';
+        this.transformCtrl.setSpace(next);
+        document.getElementById('tool-local').textContent = next === 'local' ? '⊕' : '⊙';
+      }
+
+      undo() { this.cmdMgr.undo(); this.updateInputs(); }
+      redo() { this.cmdMgr.redo(); this.updateInputs(); }
+
+      newScene() {
+        if (!confirm('确定要新建场景？未保存的更改将丢失。')) return;
+        [...this.objects].forEach(obj => this.scene.remove(obj));
+        this.objects = [];
+        this.select(null);
+        this.cmdMgr.clear();
+        this.addEmissive();
+      }
+
+      saveScene() {}
+      loadScene() {}
+      importGLTF() {}
+      exportScene() {}
+
+      updateTree() {
+        const tree = document.getElementById('scene-panel');
+        if (this.objects.length === 0) {
+          tree.innerHTML = '<div class="empty-state">暂无对象</div>';
+          return;
+        }
+        let html = '';
+        this.objects.forEach((obj, i) => {
+          const selected = obj === this.selected ? 'selected' : '';
+          const icon = obj.isMesh ? '🎲' : '💡';
+          html += `
+            <div class="tree-item ${selected}" onclick="editor.selectByIndex(${i})">
+              <span class="icon">${icon}</span>
+              <span>${obj.name}</span>
+              <span class="actions">
+                <button onclick="event.stopPropagation(); editor.deleteByIndex(${i})">🗑</button>
+              </span>
+            </div>
+          `;
+        });
+        tree.innerHTML = html;
+      }
+
+      selectByIndex(i) { this.select(this.objects[i]); }
+      deleteByIndex(i) { this.cmdMgr.execute(new RemoveObjectCmd(this, this.objects[i])); }
+
+      updateStatus() {
+        const count = this.objects.filter(o => o.isMesh).length;
+        document.getElementById('st-obj').textContent = count + ' 个对象';
+      }
+
+      updateInputs() {
+        if (!this.selected) {
+          ['pos-x','pos-y','pos-z','rot-x','rot-y','rot-z','scale-x','scale-y','scale-z']
+            .forEach(id => document.getElementById(id).value = id.startsWith('scale') ? 1 : 0);
+          return;
+        }
+        const set = (id, v) => document.getElementById(id).value = v.toFixed(2);
+        set('pos-x', this.selected.position.x);
+        set('pos-y', this.selected.position.y);
+        set('pos-z', this.selected.position.z);
+        set('rot-x', THREE.MathUtils.radToDeg(this.selected.rotation.x));
+        set('rot-y', THREE.MathUtils.radToDeg(this.selected.rotation.y));
+        set('rot-z', THREE.MathUtils.radToDeg(this.selected.rotation.z));
+        set('scale-x', this.selected.scale.x);
+        set('scale-y', this.selected.scale.y);
+        set('scale-z', this.selected.scale.z);
+      }
+
+      setupPropertyListeners() {
+        const transformIds = ['pos-x','pos-y','pos-z','rot-x','rot-y','rot-z','scale-x','scale-y','scale-z'];
+        transformIds.forEach(id => {
+          document.getElementById(id).addEventListener('change', () => this.applyTransform());
+        });
+        
+        document.getElementById('mat-color').addEventListener('input', (e) => this.applyMaterial('color', e.target.value));
+        document.getElementById('mat-emissive').addEventListener('input', (e) => this.applyMaterial('emissive', e.target.value));
+        
+        ['roughness','metalness'].forEach(prop => {
+          document.getElementById('mat-' + prop).addEventListener('input', (e) => {
+            document.getElementById('val-' + prop).textContent = e.target.value;
+            this.applyMaterial(prop, parseFloat(e.target.value));
+          });
+        });
+      }
+
+      setupPostProcessingListeners() {
+        // Bloom
+        document.getElementById('pp-bloom-enable').addEventListener('change', (e) => {
+          this.ppConfig.bloom.enabled = e.target.checked;
+          if (this.bloomPass) this.bloomPass.enabled = e.target.checked;
+          this.updateEffectStatus();
+        });
+        
+        ['strength','radius','threshold'].forEach(param => {
+          document.getElementById('pp-bloom-' + param).addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            document.getElementById('val-bloom-' + param).textContent = val;
+            this.ppConfig.bloom[param] = val;
+            if (this.bloomPass) this.bloomPass[param] = val;
+          });
+        });
+
+        // FXAA
+        document.getElementById('pp-fxaa-enable').addEventListener('change', (e) => {
+          this.ppConfig.fxaa.enabled = e.target.checked;
+          if (this.fxaaPass) this.fxaaPass.enabled = e.target.checked;
+          this.updateEffectStatus();
+        });
+
+        // SSAO (模拟)
+        document.getElementById('pp-ssao-enable').addEventListener('change', (e) => {
+          this.ppConfig.ssao = { enabled: e.target.checked };
+        });
+      }
+
+      updateEffectStatus() {
+        const effects = [];
+        if (this.ppConfig.bloom.enabled) effects.push('Bloom');
+        if (this.ppConfig.fxaa.enabled) effects.push('FXAA');
+        if (this.ppConfig.ssao?.enabled) effects.push('SSAO');
+        document.getElementById('st-effects').textContent = effects.length > 0 ? '✨ ' + effects.join(' ') : '⏹️ 无效果';
+      }
+
+      applyPreset(preset) {
+        const config = preset.config;
+        
+        if (config.bloom) {
+          Object.assign(this.ppConfig.bloom, config.bloom);
+          document.getElementById('pp-bloom-enable').checked = config.bloom.enabled;
+          document.getElementById('pp-bloom-strength').value = config.bloom.strength;
+          document.getElementById('pp-bloom-radius').value = config.bloom.radius;
+          document.getElementById('pp-bloom-threshold').value = config.bloom.threshold;
+          ['strength','radius','threshold'].forEach(p => {
+            document.getElementById('val-bloom-' + p).textContent = config.bloom[p];
+          });
+          
+          if (this.bloomPass) {
+            this.bloomPass.enabled = config.bloom.enabled;
+            this.bloomPass.strength = config.bloom.strength;
+            this.bloomPass.radius = config.bloom.radius;
+            this.bloomPass.threshold = config.bloom.threshold;
+          }
+        }
+        
+        if (config.fxaa) {
+          this.ppConfig.fxaa.enabled = config.fxaa.enabled;
+          document.getElementById('pp-fxaa-enable').checked = config.fxaa.enabled;
+          if (this.fxaaPass) this.fxaaPass.enabled = config.fxaa.enabled;
+        }
+        
+        this.updateEffectStatus();
+      }
+
+      saveCurrentAsPreset() {
+        const name = prompt('预设名称:');
+        if (!name) return;
+        
+        const preset = {
+          name,
+          description: '自定义预设',
+          category: 'custom',
+          config: JSON.parse(JSON.stringify(this.ppConfig))
+        };
+        
+        EffectPresets.push(preset);
+        this.renderPresets();
+        
+        // 保存到 localStorage
+        localStorage.setItem('custom-presets', JSON.stringify(EffectPresets.filter(p => p.category === 'custom')));
+      }
+
+      resetPostProcessing() {
+        this.applyPreset({
+          config: {
+            bloom: { enabled: true, strength: 0.5, radius: 0.4, threshold: 0.85 },
+            fxaa: { enabled: true }
+          }
+        });
+      }
+
+      renderPresets() {
+        const container = document.getElementById('presets-panel');
+        let html = '';
+        
+        const categories = { cinematic: '电影级', artistic: '艺术', performance: '性能', custom: '自定义' };
+        
+        Object.keys(categories).forEach(cat => {
+          const presets = EffectPresets.filter(p => p.category === cat);
+          if (presets.length === 0) return;
+          
+          html += `<div style="font-size:10px;color:#666;margin:16px 0 10px;text-transform:uppercase;letter-spacing:0.5px;">${categories[cat]}</div>`;
+          
+          presets.forEach((preset, i) => {
+            html += `
+              <div class="preset-item" onclick="editor.applyPreset(EffectPresets[${EffectPresets.indexOf(preset)}]); highlightPreset(this)">
+                <div class="preset-name">${preset.name}</div>
+                <div class="preset-desc">${preset.description}</div>
+              </div>
+            `;
+          });
+        });
+        
+        container.innerHTML = html;
+      }
+
+      applyTransform() {
+        if (!this.selected) return;
+        const get = (id) => parseFloat(document.getElementById(id).value) || 0;
+        this.selected.position.set(get('pos-x'), get('pos-y'), get('pos-z'));
+        this.selected.rotation.set(
+          THREE.MathUtils.degToRad(get('rot-x')),
+          THREE.MathUtils.degToRad(get('rot-y')),
+          THREE.MathUtils.degToRad(get('rot-z'))
+        );
+        this.selected.scale.set(get('scale-x'), get('scale-y'), get('scale-z'));
+      }
+
+      applyMaterial(prop, value) {
+        if (!this.selected || !this.selected.material) return;
+        const mat = this.selected.material;
+        if (prop === 'color' || prop === 'emissive') {
+          mat[prop].set(value);
+        } else {
+          mat[prop] = value;
+        }
+        mat.needsUpdate = true;
+      }
+
+      updateMaterialPanel() {
+        const hasMat = this.selected && this.selected.material;
+        if (!hasMat) return;
+        const mat = this.selected.material;
+        document.getElementById('mat-color').value = '#' + mat.color.getHexString();
+        if (mat.emissive) {
+          document.getElementById('mat-emissive').value = '#' + mat.emissive.getHexString();
+        }
+        ['roughness','metalness'].forEach(prop => {
+          if (prop in mat) {
+            document.getElementById('mat-' + prop).value = mat[prop];
+            document.getElementById('val-' + prop).textContent = mat[prop];
+          }
+        });
+      }
+    }
+
+    // 启动
+    window.editor = new Editor();
+    
+    window.switchTab = (tab) => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById('presets-panel').style.display = tab === 'presets' ? 'block' : 'none';
+      document.getElementById('scene-panel').style.display = tab === 'scene' ? 'block' : 'none';
+    };
+    
+    window.highlightPreset = (el) => {
+      document.querySelectorAll('.preset-item').forEach(p => p.classList.remove('active'));
+      el.classList.add('active');
+    };
+    
+    // FPS
+    let frames = 0, last = performance.now();
+    setInterval(() => {
+      const now = performance.now();
+      document.getElementById('st-fps').textContent = Math.round(frames * 1000 / (now - last)) + ' FPS';
+      frames = 0;
+      last = now;
+    }, 1000);
+    
+    const origAnimate = window.editor.animate;
+    window.editor.animate = function() {
+      frames++;
+      origAnimate.call(this);
+    };
+  </script>
+</body>
+</html>

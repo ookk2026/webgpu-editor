@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebGPU Editor Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; font-family: system-ui, sans-serif; background: #1a1a1a; }
+    #app { display: flex; flex-direction: column; width: 100%; height: 100%; }
+    #toolbar { height: 42px; background: #252526; border-bottom: 1px solid #333; display: flex; align-items: center; padding: 0 12px; gap: 8px; }
+    #toolbar button { padding: 6px 14px; background: #3c3c3c; color: #e0e0e0; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    #toolbar button:hover { background: #4c4c4c; }
+    #toolbar button.primary { background: #0e639c; }
+    #toolbar button.primary:hover { background: #1177bb; }
+    #main { flex: 1; display: flex; overflow: hidden; }
+    #left { width: 220px; background: #252526; border-right: 1px solid #333; }
+    .panel-header { height: 30px; background: #2d2d2d; display: flex; align-items: center; padding: 0 12px; font-size: 11px; font-weight: 600; color: #bbb; border-bottom: 1px solid #333; }
+    #scene-tree { padding: 8px; color: #ccc; font-size: 12px; }
+    .tree-item { padding: 4px 8px; cursor: pointer; border-radius: 3px; display: flex; align-items: center; gap: 6px; }
+    .tree-item:hover { background: #2a2d2e; }
+    .tree-item.selected { background: #094771; }
+    #center { flex: 1; position: relative; }
+    #canvas { width: 100%; height: 100%; display: block; }
+    #viewport-tools { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; padding: 4px; background: rgba(37,37,38,0.9); border-radius: 6px; backdrop-filter: blur(10px); }
+    #viewport-tools button { width: 32px; height: 32px; background: transparent; border: none; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 14px; }
+    #viewport-tools button:hover, #viewport-tools button.active { background: #3c3c3c; }
+    #right { width: 260px; background: #252526; border-left: 1px solid #333; }
+    .property-group { border-bottom: 1px solid #333; }
+    .property-header { height: 26px; background: #2d2d2d; display: flex; align-items: center; padding: 0 12px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #bbb; cursor: pointer; }
+    .property-content { padding: 12px; }
+    .prop-row { display: flex; align-items: center; margin-bottom: 8px; }
+    .prop-label { width: 60px; color: #aaa; font-size: 11px; }
+    .prop-input { flex: 1; display: flex; gap: 4px; }
+    .prop-input input { flex: 1; padding: 4px 8px; background: #3c3c3c; border: 1px solid #444; border-radius: 3px; color: #e0e0e0; font-size: 11px; width: 0; }
+    .prop-input input:focus { outline: none; border-color: #0e639c; }
+    #statusbar { height: 22px; background: #007acc; display: flex; align-items: center; padding: 0 12px; font-size: 11px; color: white; }
+    #statusbar span { margin-right: 20px; }
+    #loading { position: fixed; inset: 0; background: #1a1a1a; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #888; z-index: 1000; }
+    #loading.hidden { display: none; }
+    .spinner { width: 40px; height: 40px; border: 3px solid #333; border-top-color: #007acc; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 16px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error { color: #ff6b6b !important; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="toolbar">
+      <button onclick="addCube()" class="primary">+ 立方体</button>
+      <button onclick="addSphere()" class="primary">+ 球体</button>
+      <button onclick="addLight()" class="primary">+ 光源</button>
+      <span style="flex:1"></span>
+      <button onclick="exportScene()">导出场景</button>
+      <button onclick="toggleRenderMode()">切换渲染</button>
+    </div>
+    <div id="main">
+      <div id="left">
+        <div class="panel-header">场景层级</div>
+        <div id="scene-tree"></div>
+      </div>
+      <div id="center">
+        <canvas id="canvas"></canvas>
+        <div id="viewport-tools">
+          <button id="btn-translate" class="active" title="移动 (T)">↔</button>
+          <button id="btn-rotate" title="旋转 (R)">↻</button>
+          <button id="btn-scale" title="缩放 (S)">⤢</button>
+        </div>
+      </div>
+      <div id="right">
+        <div class="panel-header">属性</div>
+        <div class="property-group">
+          <div class="property-header">变换</div>
+          <div class="property-content">
+            <div class="prop-row"><span class="prop-label">位置</span><div class="prop-input"><input id="pX" type="number" step="0.1"><input id="pY" type="number" step="0.1"><input id="pZ" type="number" step="0.1"></div></div>
+            <div class="prop-row"><span class="prop-label">旋转</span><div class="prop-input"><input id="rX" type="number" step="1"><input id="rY" type="number" step="1"><input id="rZ" type="number" step="1"></div></div>
+            <div class="prop-row"><span class="prop-label">缩放</span><div class="prop-input"><input id="sX" type="number" step="0.1" value="1"><input id="sY" type="number" step="0.1" value="1"><input id="sZ" type="number" step="0.1" value="1"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="statusbar">
+      <span id="st-mode">就绪</span>
+      <span id="st-obj">0 对象</span>
+      <span id="st-render">WebGL2</span>
+      <span id="st-fps">-- FPS</span>
+    </div>
+  </div>
+  <div id="loading"><div class="spinner"></div><div id="load-text">初始化引擎...</div></div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { TransformControls } from 'three/addons/controls/TransformControls.js';
+
+    // 全局状态
+    let scene, camera, renderer, orbitCtrl, transformCtrl, raycaster, mouse;
+    let selectedObj = null;
+    let objects = [];
+    let isWebGPU = false;
+    let frameCount = 0;
+    let lastTime = performance.now();
+
+    // 初始化
+    async function init() {
+      try {
+        const canvas = document.getElementById('canvas');
+        
+        // 尝试 WebGPU
+        if (navigator.gpu) {
+          try {
+            const adapter = await navigator.gpu.requestAdapter();
+            if (adapter) {
+              const { default: WebGPURenderer } = await import('three/addons/renderers/webgpu/WebGPURenderer.js');
+              renderer = new WebGPURenderer({ canvas, antialias: true });
+              await renderer.init();
+              isWebGPU = true;
+            }
+          } catch(e) { console.log('WebGPU 失败，使用 WebGL2:', e); }
+        }
+        
+        // 降级 WebGL2
+        if (!renderer) {
+          renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        }
+
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.setClearColor(0x1a1a1a);
+
+        // 场景
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a1a);
+
+        // 相机
+        camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+        camera.position.set(5, 5, 5);
+        camera.lookAt(0, 0, 0);
+
+        // 控制
+        orbitCtrl = new OrbitControls(camera, canvas);
+        orbitCtrl.enableDamping = true;
+        orbitCtrl.dampingFactor = 0.05;
+
+        transformCtrl = new TransformControls(camera, canvas);
+        transformCtrl.addEventListener('dragging-changed', (e) => orbitCtrl.enabled = !e.value);
+        transformCtrl.addEventListener('change', updateInputs);
+        scene.add(transformCtrl);
+
+        // 射线检测
+        raycaster = new THREE.Raycaster();
+        mouse = new THREE.Vector2();
+
+        // 默认光源
+        const ambient = new THREE.AmbientLight(0x404040, 0.5);
+        ambient.name = '环境光';
+        scene.add(ambient);
+
+        const dir = new THREE.DirectionalLight(0xffffff, 1);
+        dir.name = '方向光';
+        dir.position.set(5, 10, 7);
+        dir.castShadow = true;
+        scene.add(dir);
+
+        // 网格
+        const grid = new THREE.GridHelper(20, 20, 0x444444, 0x222222);
+        grid.name = '网格';
+        scene.add(grid);
+
+        // 默认立方体
+        addCube();
+
+        // 事件
+        window.addEventListener('resize', onResize);
+        canvas.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('keydown', onKeyDown);
+
+        // 属性输入监听
+        ['pX','pY','pZ','rX','rY','rZ','sX','sY','sZ'].forEach(id => {
+          document.getElementById(id).addEventListener('change', updateFromInputs);
+        });
+
+        // 渲染循环
+        animate();
+
+        // UI 更新
+        document.getElementById('loading').classList.add('hidden');
+        document.getElementById('st-render').textContent = isWebGPU ? 'WebGPU' : 'WebGL2';
+        console.log('渲染模式:', isWebGPU ? 'WebGPU' : 'WebGL2');
+
+      } catch (err) {
+        document.getElementById('load-text').textContent = '初始化失败: ' + err.message;
+        document.getElementById('load-text').classList.add('error');
+        console.error(err);
+      }
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      
+      const now = performance.now();
+      frameCount++;
+      if (now - lastTime >= 1000) {
+        document.getElementById('st-fps').textContent = frameCount + ' FPS';
+        frameCount = 0;
+        lastTime = now;
+      }
+
+      orbitCtrl.update();
+      renderer.render(scene, camera);
+    }
+
+    function onResize() {
+      const canvas = document.getElementById('canvas');
+      const parent = canvas.parentElement;
+      camera.aspect = parent.clientWidth / parent.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(parent.clientWidth, parent.clientHeight);
+    }
+
+    function onPointerDown(e) {
+      if (e.button !== 0) return;
+      
+      const canvas = document.getElementById('canvas');
+      const rect = canvas.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(objects);
+
+      if (intersects.length > 0 && !transformCtrl.dragging) {
+        selectObject(intersects[0].object);
+      } else if (!transformCtrl.dragging) {
+        selectObject(null);
+      }
+    }
+
+    function onKeyDown(e) {
+      if (e.target.tagName === 'INPUT') return;
+      
+      switch(e.key.toLowerCase()) {
+        case 't': setMode('translate'); break;
+        case 'r': setMode('rotate'); break;
+        case 's': setMode('scale'); break;
+        case 'delete':
+        case 'backspace': deleteObj(); break;
+        case 'd': if (e.ctrlKey) duplicateObj(); break;
+      }
+    }
+
+    // 全局函数
+    window.addCube = function() {
+      const geo = new THREE.BoxGeometry(1, 1, 1);
+      const mat = new THREE.MeshStandardMaterial({ 
+        color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5),
+        roughness: 0.5,
+        metalness: 0.1
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.name = '立方体 ' + (objects.filter(o => o.name.includes('立方')).length + 1);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.position.set((Math.random()-0.5)*4, 0.5, (Math.random()-0.5)*4);
+      scene.add(mesh);
+      objects.push(mesh);
+      selectObject(mesh);
+      updateTree();
+      updateStatus();
+    };
+
+    window.addSphere = function() {
+      const geo = new THREE.SphereGeometry(0.5, 32, 16);
+      const mat = new THREE.MeshStandardMaterial({ 
+        color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5),
+        roughness: 0.3,
+        metalness: 0.2
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.name = '球体 ' + (objects.filter(o => o.name.includes('球')).length + 1);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.position.set((Math.random()-0.5)*4, 0.5, (Math.random()-0.5)*4);
+      scene.add(mesh);
+      objects.push(mesh);
+      selectObject(mesh);
+      updateTree();
+      updateStatus();
+    };
+
+    window.addLight = function() {
+      const light = new THREE.PointLight(0xffaa00, 1, 10);
+      light.name = '点光源 ' + (objects.filter(o => o.name.includes('光源')).length + 1);
+      light.position.set(2, 3, 2);
+      scene.add(light);
+      objects.push(light);
+      
+      // 添加可视化球体
+      const helper = new THREE.Mesh(
+        new THREE.SphereGeometry(0.1),
+        new THREE.MeshBasicMaterial({ color: 0xffaa00 })
+      );
+      helper.name = light.name + ' (可视化)';
+      light.add(helper);
+      
+      selectObject(light);
+      updateTree();
+      updateStatus();
+    };
+
+    window.exportScene = function() {
+      const data = {
+        version: '1.0.0',
+        metadata: { name: 'My Scene', created: Date.now() },
+        objects: objects.map(o => ({
+          name: o.name,
+          type: o.type,
+          position: o.position.toArray(),
+          rotation: o.rotation.toArray(),
+          scale: o.scale.toArray()
+        }))
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'scene.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    window.toggleRenderMode = function() {
+      alert('当前模式: ' + (isWebGPU ? 'WebGPU' : 'WebGL2') + '\n刷新页面可切换');
+    };
+
+    function selectObject(obj) {
+      selectedObj = obj;
+      if (obj) {
+        transformCtrl.attach(obj);
+        transformCtrl.visible = true;
+      } else {
+        transformCtrl.detach();
+        transformCtrl.visible = false;
+      }
+      updateInputs();
+      updateTree();
+    }
+
+    function setMode(mode) {
+      transformCtrl.setMode(mode);
+      document.querySelectorAll('#viewport-tools button').forEach(b => b.classList.remove('active'));
+      document.getElementById('btn-' + mode).classList.add('active');
+    }
+
+    window.setMode = setMode;
+
+    function deleteObj() {
+      if (selectedObj) {
+        transformCtrl.detach();
+        scene.remove(selectedObj);
+        objects = objects.filter(o => o !== selectedObj);
+        selectedObj = null;
+        updateTree();
+        updateStatus();
+        updateInputs();
+      }
+    }
+    window.deleteObj = deleteObj;
+
+    function duplicateObj() {
+      if (!selectedObj) return;
+      // 简化版复制
+      console.log('复制:', selectedObj.name);
+    }
+    window.duplicateObj = duplicateObj;
+
+    function updateInputs() {
+      if (!selectedObj) {
+        ['pX','pY','pZ','rX','rY','rZ','sX','sY','sZ'].forEach(id => {
+          document.getElementById(id).value = id.startsWith('s') ? 1 : 0;
+        });
+        return;
+      }
+      const set = (id, v) => document.getElementById(id).value = v.toFixed(2);
+      set('pX', selectedObj.position.x); set('pY', selectedObj.position.y); set('pZ', selectedObj.position.z);
+      set('rX', THREE.MathUtils.radToDeg(selectedObj.rotation.x));
+      set('rY', THREE.MathUtils.radToDeg(selectedObj.rotation.y));
+      set('rZ', THREE.MathUtils.radToDeg(selectedObj.rotation.z));
+      set('sX', selectedObj.scale.x); set('sY', selectedObj.scale.y); set('sZ', selectedObj.scale.z);
+    }
+
+    function updateFromInputs() {
+      if (!selectedObj) return;
+      const get = (id) => parseFloat(document.getElementById(id).value) || 0;
+      selectedObj.position.set(get('pX'), get('pY'), get('pZ'));
+      selectedObj.rotation.set(
+        THREE.MathUtils.degToRad(get('rX')),
+        THREE.MathUtils.degToRad(get('rY')),
+        THREE.MathUtils.degToRad(get('rZ'))
+      );
+      selectedObj.scale.set(get('sX'), get('sY'), get('sZ'));
+    }
+
+    function updateTree() {
+      const tree = document.getElementById('scene-tree');
+      let html = '';
+      objects.forEach((obj, i) => {
+        const selected = obj === selectedObj ? 'selected' : '';
+        html += `<div class="tree-item ${selected}" onclick="window.selectByIndex(${i})">📦 ${obj.name}</div>`;
+      });
+      tree.innerHTML = html || '<div style="color:#666;padding:12px">暂无对象</div>';
+    }
+
+    window.selectByIndex = function(i) {
+      selectObject(objects[i]);
+    };
+
+    function updateStatus() {
+      document.getElementById('st-obj').textContent = objects.length + ' 对象';
+    }
+
+    // 绑定工具栏按钮
+    document.getElementById('btn-translate').onclick = () => setMode('translate');
+    document.getElementById('btn-rotate').onclick = () => setMode('rotate');
+    document.getElementById('btn-scale').onclick = () => setMode('scale');
+
+    // 启动
+    init();
+  </script>
+</body>
+</html>

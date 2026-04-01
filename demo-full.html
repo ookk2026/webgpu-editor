@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebGPU Editor - 完整版</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; font-family: system-ui, sans-serif; background: #0a0a0a; }
+    #app { display: flex; flex-direction: column; width: 100%; height: 100%; }
+    
+    /* 工具栏 */
+    #toolbar { height: 48px; background: linear-gradient(180deg, #2a2a2a 0%, #222 100%); border-bottom: 1px solid #333; display: flex; align-items: center; padding: 0 12px; gap: 6px; }
+    #toolbar button { padding: 6px 12px; background: #383838; color: #e0e0e0; border: 1px solid #444; border-radius: 5px; cursor: pointer; font-size: 11px; transition: all 0.15s; }
+    #toolbar button:hover { background: #444; }
+    #toolbar button.primary { background: linear-gradient(180deg, #0e8add 0%, #0a6cb5 100%); border-color: #0e8add; color: white; }
+    #toolbar button.export { background: linear-gradient(180deg, #28a745 0%, #1e7e34 100%); border-color: #28a745; color: white; }
+    #toolbar button:disabled { opacity: 0.4; cursor: not-allowed; }
+    #toolbar .separator { width: 1px; height: 20px; background: #444; margin: 0 4px; }
+    
+    /* 主布局 */
+    #main { flex: 1; display: flex; overflow: hidden; }
+    
+    /* 左侧面板 */
+    #left { width: 240px; background: #1a1a1a; border-right: 1px solid #2a2a2a; display: flex; flex-direction: column; }
+    .panel-header { height: 32px; background: linear-gradient(180deg, #252525 0%, #1f1f1f 100%); display: flex; align-items: center; padding: 0 12px; font-size: 11px; font-weight: 600; color: #bbb; border-bottom: 1px solid #2a2a2a; }
+    .panel-content { flex: 1; overflow: auto; padding: 8px; }
+    .tabs { display: flex; border-bottom: 1px solid #2a2a2a; }
+    .tab { flex: 1; padding: 8px; text-align: center; font-size: 10px; color: #666; cursor: pointer; border-bottom: 2px solid transparent; }
+    .tab.active { color: #0e8add; border-bottom-color: #0e8add; background: rgba(14, 138, 221, 0.05); }
+    
+    /* 场景树 */
+    .tree-item { padding: 6px 8px; cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: #999; margin-bottom: 2px; }
+    .tree-item:hover { background: rgba(255,255,255,0.05); }
+    .tree-item.selected { background: rgba(14, 138, 221, 0.2); color: #6cc4ff; }
+    
+    /* 粒子预设 */
+    .preset-item { padding: 8px; margin-bottom: 6px; background: #222; border: 1px solid #2a2a2a; border-radius: 5px; cursor: pointer; }
+    .preset-item:hover { border-color: #0e8add; }
+    .preset-name { font-size: 11px; color: #ddd; }
+    .preset-desc { font-size: 9px; color: #666; margin-top: 2px; }
+    
+    /* 视口 */
+    #center { flex: 1; position: relative; background: #050505; }
+    #canvas { width: 100%; height: 100%; display: block; }
+    #viewport-tools { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; padding: 4px; background: rgba(30,30,30,0.95); border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); }
+    #viewport-tools button { width: 34px; height: 34px; background: transparent; border: none; color: #888; cursor: pointer; border-radius: 6px; font-size: 15px; }
+    #viewport-tools button:hover { color: #fff; }
+    #viewport-tools button.active { background: #0e8add; color: white; }
+    
+    /* 右侧面板 */
+    #right { width: 300px; background: #1a1a1a; border-left: 1px solid #2a2a2a; display: flex; flex-direction: column; overflow-y: auto; }
+    .prop-group { border-bottom: 1px solid #252525; }
+    .prop-group-header { height: 30px; background: linear-gradient(180deg, #222 0%, #1e1e1e 100%); display: flex; align-items: center; padding: 0 12px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #888; }
+    .prop-group-content { padding: 12px; }
+    .prop-row { display: flex; align-items: center; margin-bottom: 10px; gap: 8px; }
+    .prop-label { width: 70px; color: #777; font-size: 10px; }
+    .prop-input { flex: 1; display: flex; gap: 4px; }
+    .prop-input input, .prop-input select { flex: 1; padding: 5px 8px; background: #252525; border: 1px solid #333; border-radius: 3px; color: #ccc; font-size: 10px; }
+    .prop-input input:focus { outline: none; border-color: #0e8add; }
+    .prop-input input[type="color"] { width: 28px; height: 24px; padding: 2px; }
+    .prop-input input[type="range"] { padding: 0; height: 4px; }
+    .prop-value { min-width: 28px; text-align: right; font-size: 9px; color: #555; }
+    .checkbox-row { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 11px; color: #aaa; }
+    .checkbox-row input { width: 14px; height: 14px; accent-color: #0e8add; }
+    .btn-row { display: flex; gap: 6px; margin-top: 10px; }
+    .btn-row button { flex: 1; padding: 8px; background: #0e8add; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; }
+    .btn-row button.secondary { background: #333; }
+    .btn-row button.danger { background: #dc3545; }
+    
+    /* 状态栏 */
+    #statusbar { height: 26px; background: linear-gradient(180deg, #0a7acc 0%, #0866a8 100%); display: flex; align-items: center; padding: 0 12px; font-size: 11px; color: white; }
+    #statusbar span { margin-right: 20px; }
+    
+    /* 导出对话框 */
+    .dialog-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 1000; }
+    .dialog-overlay.active { display: flex; }
+    .dialog { background: #1e1e1e; border: 1px solid #333; border-radius: 8px; width: 90%; max-width: 450px; }
+    .dialog-header { padding: 12px 16px; border-bottom: 1px solid #333; font-size: 14px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+    .dialog-close { background: none; border: none; color: #666; font-size: 18px; cursor: pointer; }
+    .dialog-body { padding: 16px; }
+    
+    #loading { position: fixed; inset: 0; background: #0a0a0a; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #555; z-index: 1000; }
+    #loading.hidden { display: none; }
+    .spinner { width: 40px; height: 40px; border: 3px solid #1a1a1a; border-top-color: #0e8add; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 12px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 工具栏 -->
+    <div id="toolbar">
+      <button onclick="editor.newScene()">🗑 新建</button>
+      <button id="btn-undo" onclick="editor.undo()" disabled>↶ 撤销</button>
+      <button id="btn-redo" onclick="editor.redo()" disabled>↷ 重做</button>
+      <div class="separator"></div>
+      <button onclick="editor.addCube()" class="primary">⧉ 立方体</button>
+      <button onclick="editor.addSphere()" class="primary">○ 球体</button>
+      <button onclick="editor.addPhysicsBox()" class="primary">📦 物理</button>
+      <button onclick="editor.addEmissive()" class="primary">✨ 发光</button>
+      <div style="flex:1"></div>
+      <button id="btn-physics" onclick="editor.togglePhysics()">⏸️ 物理</button>
+      <button onclick="editor.showExportDialog()" class="export">📦 导出</button>
+    </div>
+
+    <div id="main">
+      <!-- 左侧面板 -->
+      <div id="left">
+        <div class="tabs">
+          <div class="tab active" onclick="switchTab('scene', this)">场景</div>
+          <div class="tab" onclick="switchTab('particles', this)">粒子</div>
+          <div class="tab" onclick="switchTab('presets', this)">预设</div>
+        </div>
+        <div class="panel-content">
+          <!-- 场景层级 -->
+          <div id="tab-scene">
+            <div class="panel-header">📂 场景层级</div>
+            <div id="scene-tree" style="padding: 8px;">
+              <div style="color: #555; font-size: 11px; text-align: center; padding: 20px;">暂无对象</div>
+            </div>
+          </div>
+          <!-- 粒子预设 -->
+          <div id="tab-particles" style="display:none;">
+            <div class="panel-header">🎆 粒子效果</div>
+            <div style="padding: 8px;">
+              <div class="preset-item" onclick="editor.addParticleSystem('fire')">
+                <div class="preset-name">🔥 火焰</div>
+                <div class="preset-desc">燃烧火焰效果</div>
+              </div>
+              <div class="preset-item" onclick="editor.addParticleSystem('smoke')">
+                <div class="preset-name">💨 烟雾</div>
+                <div class="preset-desc">升腾烟雾</div>
+              </div>
+              <div class="preset-item" onclick="editor.addParticleSystem('explosion')">
+                <div class="preset-name">💥 爆炸</div>
+                <div class="preset-desc">一次性爆发</div>
+              </div>
+              <div class="preset-item" onclick="editor.addParticleSystem('magic')">
+                <div class="preset-name">✨ 魔法</div>
+                <div class="preset-desc">梦幻粒子</div>
+              </div>
+              <div class="preset-item" onclick="editor.addParticleSystem('spark')">
+                <div class="preset-name">⚡ 火花</div>
+                <div class="preset-desc">四散火花</div>
+              </div>
+              <div class="preset-item" onclick="editor.addParticleSystem('rain')">
+                <div class="preset-name">🌧️ 雨滴</div>
+                <div class="preset-desc">下雨效果</div>
+              </div>
+              <div class="btn-row" style="margin-top: 12px;">
+                <button onclick="editor.burstParticles()">💥 爆发</button>
+                <button class="danger" onclick="editor.clearParticles()">🗑 清除</button>
+              </div>
+            </div>
+          </div>
+          <!-- 后处理预设 -->
+          <div id="tab-presets" style="display:none;">
+            <div class="panel-header">🎨 后处理预设</div>
+            <div style="padding: 8px;">
+              <div class="preset-item" onclick="editor.applyPreset('cinematic')">
+                <div class="preset-name">🎬 电影级</div>
+                <div class="preset-desc">高质量电影效果</div>
+              </div>
+              <div class="preset-item" onclick="editor.applyPreset('scifi')">
+                <div class="preset-name">🚀 科幻</div>
+                <div class="preset-desc">强烈霓虹辉光</div>
+              </div>
+              <div class="preset-item" onclick="editor.applyPreset('dreamy')">
+                <div class="preset-name">💫 梦幻</div>
+                <div class="preset-desc">柔和泛光</div>
+              </div>
+              <div class="preset-item" onclick="editor.applyPreset('performance')">
+                <div class="preset-name">⚡ 性能优先</div>
+                <div class="preset-desc">最佳帧率</div>
+              </div>
+              <div class="preset-item" onclick="editor.applyPreset('none')">
+                <div class="preset-name">⏹️ 关闭效果</div>
+                <div class="preset-desc">禁用所有后处理</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 中间视口 -->
+      <div id="center">
+        <canvas id="canvas"></canvas>
+        <div id="viewport-tools">
+          <button id="tool-translate" class="active" onclick="editor.setTool('translate')">↔</button>
+          <button id="tool-rotate" onclick="editor.setTool('rotate')">↻</button>
+          <button id="tool-scale" onclick="editor.setTool('scale')">⤢</button>
+          <button id="tool-local" onclick="editor.toggleSpace()">⊕</button>
+        </div>
+      </div>
+
+      <!-- 右侧面板 -->
+      <div id="right">
+        <!-- 变换 -->
+        <div class="prop-group">
+          <div class="prop-group-header">🔄 变换</div>
+          <div class="prop-group-content">
+            <div class="prop-row">
+              <span class="prop-label">位置</span>
+              <div class="prop-input">
+                <input id="pos-x" type="number" step="0.1" onchange="editor.updateTransform()">
+                <input id="pos-y" type="number" step="0.1" onchange="editor.updateTransform()">
+                <input id="pos-z" type="number" step="0.1" onchange="editor.updateTransform()">
+              </div>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">旋转</span>
+              <div class="prop-input">
+                <input id="rot-x" type="number" step="1" onchange="editor.updateTransform()">
+                <input id="rot-y" type="number" step="1" onchange="editor.updateTransform()">
+                <input id="rot-z" type="number" step="1" onchange="editor.updateTransform()">
+              </div>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">缩放</span>
+              <div class="prop-input">
+                <input id="scale-x" type="number" step="0.1" value="1" onchange="editor.updateTransform()">
+                <input id="scale-y" type="number" step="0.1" value="1" onchange="editor.updateTransform()">
+                <input id="scale-z" type="number" step="0.1" value="1" onchange="editor.updateTransform()">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 材质 -->
+        <div class="prop-group">
+          <div class="prop-group-header">🎨 材质</div>
+          <div class="prop-group-content">
+            <div class="prop-row">
+              <span class="prop-label">颜色</span>
+              <div class="prop-input">
+                <input id="mat-color" type="color" oninput="editor.updateMaterial('color', this.value)">
+              </div>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">自发光</span>
+              <div class="prop-input">
+                <input id="mat-emissive" type="color" oninput="editor.updateMaterial('emissive', this.value)">
+              </div>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">粗糙度</span>
+              <input id="mat-roughness" type="range" min="0" max="1" step="0.01" oninput="editor.updateMaterial('roughness', this.value)">
+              <span class="prop-value" id="val-roughness">0.5</span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">金属度</span>
+              <input id="mat-metalness" type="range" min="0" max="1" step="0.01" oninput="editor.updateMaterial('metalness', this.value)">
+              <span class="prop-value" id="val-metalness">0</span>
+            </div>
+            <div class="prop-row">
+              <label class="checkbox-row">
+                <input id="mat-wireframe" type="checkbox" onchange="editor.updateMaterial('wireframe', this.checked)">
+                <span>线框模式</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 后处理 -->
+        <div class="prop-group">
+          <div class="prop-group-header">✨ 后处理 (Bloom)</div>
+          <div class="prop-group-content">
+            <div class="prop-row">
+              <label class="checkbox-row">
+                <input id="pp-bloom" type="checkbox" checked onchange="editor.toggleBloom(this.checked)">
+                <span>启用 Bloom</span>
+              </label>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">强度</span>
+              <input type="range" min="0" max="3" step="0.1" value="0.5" oninput="editor.setBloomStrength(this.value)">
+              <span class="prop-value" id="val-bloom-strength">0.5</span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">半径</span>
+              <input type="range" min="0" max="1" step="0.05" value="0.4" oninput="editor.setBloomRadius(this.value)">
+              <span class="prop-value" id="val-bloom-radius">0.4</span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">阈值</span>
+              <input type="range" min="0" max="1" step="0.05" value="0.85" oninput="editor.setBloomThreshold(this.value)">
+              <span class="prop-value" id="val-bloom-threshold">0.85</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 物理控制 -->
+        <div class="prop-group">
+          <div class="prop-group-header">⚙️ 物理控制</div>
+          <div class="prop-group-content">
+            <div class="prop-row">
+              <span class="prop-label">重力 Y</span>
+              <input type="range" id="gravity-y" min="-20" max="0" step="0.5" value="-9.8" oninput="editor.updateGravity()">
+              <span class="prop-value" id="val-gravity">-9.8</span>
+            </div>
+            <div class="btn-row">
+              <button onclick="editor.applyExplosion()">💥 爆炸</button>
+              <button class="secondary" onclick="editor.applyUpForce()">⬆️ 推力</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 统计 -->
+        <div class="prop-group">
+          <div class="prop-group-header">📊 统计</div>
+          <div class="prop-group-content">
+            <div class="prop-row">
+              <span class="prop-label">对象</span>
+              <span id="stat-objects" style="color:#0e8add;">0</span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">粒子</span>
+              <span id="stat-particles" style="color:#0e8add;">0</span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">刚体</span>
+              <span id="stat-bodies" style="color:#0e8add;">0</span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">历史</span>
+              <span id="stat-history" style="color:#0e8add;">0/0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 状态栏 -->
+    <div id="statusbar">
+      <span id="st-mode">🟢 就绪</span>
+      <span id="st-obj">0 对象</span>
+      <span id="st-physics">⚙️ 物理运行</span>
+      <span id="st-effects">✨ Bloom</span>
+      <span id="st-fps">-- FPS</span>
+    </div>
+  </div>
+
+  <!-- 导出对话框 -->
+  <div class="dialog-overlay" id="export-dialog">
+    <div class="dialog">
+      <div class="dialog-header">
+        <span>📦 导出场景</span>
+        <button class="dialog-close" onclick="editor.hideExportDialog()">×</button>
+      </div>
+      <div class="dialog-body">
+        <div class="prop-row">
+          <span class="prop-label">名称</span>
+          <div class="prop-input"><input id="export-title" type="text" value="My Scene"></div>
+        </div>
+        <div class="prop-row">
+          <span class="prop-label">描述</span>
+          <div class="prop-input"><input id="export-desc" type="text" placeholder="可选"></div>
+        </div>
+        <div class="prop-row">
+          <span class="prop-label">作者</span>
+          <div class="prop-input"><input id="export-author" type="text" value="WebGPU Editor"></div>
+        </div>
+        <div class="btn-row">
+          <button onclick="editor.performExport()">📥 下载 HTML</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <div>初始化完整版编辑器...</div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { TransformControls } from 'three/addons/controls/TransformControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+    import * as CANNON from 'cannon-es';
+
+    // ==================== 粒子系统 ====================
+    class ParticleSystem {
+      constructor(scene, config = {}) {
+        this.scene = scene;
+        this.config = { maxParticles: 1000, emissionRate: 100, minLife: 1, maxLife: 3, startSize: 0.5, endSize: 0.1, startColor: new THREE.Color(1,1,1), endColor: new THREE.Color(1,1,1), gravity: new THREE.Vector3(0,-9.8,0), velocity: new THREE.Vector3(0,2,0), velocityVar: new THREE.Vector3(1,0.5,1), blending: 'additive', ...config };
+        this.particles = [];
+        this.geometry = new THREE.BufferGeometry();
+        this.positions = new Float32Array(this.config.maxParticles * 3);
+        this.colors = new Float32Array(this.config.maxParticles * 3);
+        this.sizes = new Float32Array(this.config.maxParticles);
+        this.geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+        this.geometry.setAttribute('color', new THREE.BufferAttribute(this.colors, 3));
+        this.geometry.setAttribute('size', new THREE.BufferAttribute(this.sizes, 1));
+        const material = new THREE.ShaderMaterial({
+          uniforms: { pointTexture: { value: null } },
+          vertexShader: `attribute float size; varying vec3 vColor; void main() { vColor = color; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mvPosition; gl_PointSize = size * (300.0 / -mvPosition.z); }`,
+          fragmentShader: `varying vec3 vColor; void main() { vec2 coord = gl_PointCoord - vec2(0.5); float dist = length(coord); if (dist > 0.5) discard; float alpha = 1.0 - smoothstep(0.3, 0.5, dist); gl_FragColor = vec4(vColor, alpha); }`,
+          transparent: true, depthWrite: false, blending: this.config.blending === 'additive' ? THREE.AdditiveBlending : THREE.NormalBlending, vertexColors: true
+        });
+        this.mesh = new THREE.Points(this.geometry, material);
+        this.scene.add(this.mesh);
+        this.emissionAccumulator = 0; this.isPlaying = true; this.particleCount = 0;
+      }
+      update(deltaTime) {
+        if (!this.isPlaying) return;
+        this.emissionAccumulator += this.config.emissionRate * deltaTime;
+        const emitCount = Math.floor(this.emissionAccumulator); this.emissionAccumulator -= emitCount;
+        for (let i = 0; i < emitCount; i++) { if (this.particles.length >= this.config.maxParticles) break; this.spawnParticle(); }
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+          const p = this.particles[i]; p.life -= deltaTime;
+          if (p.life <= 0) { this.particles.splice(i, 1); continue; }
+          const ratio = p.life / p.maxLife;
+          p.velocity.addScaledVector(this.config.gravity, deltaTime);
+          p.position.addScaledVector(p.velocity, deltaTime);
+          p.size = THREE.MathUtils.lerp(this.config.endSize, this.config.startSize, ratio);
+          p.color.lerpColors(this.config.endColor, this.config.startColor, ratio);
+        }
+        this.updateGPU(); this.particleCount = this.particles.length;
+      }
+      spawnParticle() {
+        const life = THREE.MathUtils.lerp(this.config.minLife, this.config.maxLife, Math.random());
+        const velocity = this.config.velocity.clone();
+        velocity.x += (Math.random() - 0.5) * this.config.velocityVar.x * 2;
+        velocity.y += (Math.random() - 0.5) * this.config.velocityVar.y * 2;
+        velocity.z += (Math.random() - 0.5) * this.config.velocityVar.z * 2;
+        this.particles.push({ position: this.mesh.position.clone(), velocity, life, maxLife: life, size: this.config.startSize, color: this.config.startColor.clone() });
+      }
+      updateGPU() {
+        for (let i = 0; i < this.particles.length; i++) {
+          const p = this.particles[i];
+          this.positions[i * 3] = p.position.x; this.positions[i * 3 + 1] = p.position.y; this.positions[i * 3 + 2] = p.position.z;
+          this.colors[i * 3] = p.color.r; this.colors[i * 3 + 1] = p.color.g; this.colors[i * 3 + 2] = p.color.b;
+          this.sizes[i] = p.size;
+        }
+        for (let i = this.particles.length; i < this.config.maxParticles; i++) this.sizes[i] = 0;
+        this.geometry.attributes.position.needsUpdate = true;
+        this.geometry.attributes.color.needsUpdate = true;
+        this.geometry.attributes.size.needsUpdate = true;
+      }
+      setPosition(pos) { this.mesh.position.copy(pos); }
+      burst(count) { for (let i = 0; i < count && i < this.config.maxParticles; i++) this.spawnParticle(); }
+      clear() { this.particles = []; this.updateGPU(); }
+      play() { this.isPlaying = true; }
+      pause() { this.isPlaying = false; }
+      dispose() { this.scene.remove(this.mesh); this.geometry.dispose(); this.mesh.material.dispose(); }
+    }
+
+    const ParticlePresets = {
+      fire: { maxParticles: 500, emissionRate: 60, minLife: 0.5, maxLife: 1.5, startSize: 0.8, endSize: 0.1, startColor: new THREE.Color(1, 0.5, 0), endColor: new THREE.Color(1, 0.1, 0), velocity: new THREE.Vector3(0, 2, 0), velocityVar: new THREE.Vector3(0.5, 0.5, 0.5), gravity: new THREE.Vector3(0, 3, 0), blending: 'additive' },
+      smoke: { maxParticles: 300, emissionRate: 30, minLife: 2, maxLife: 4, startSize: 0.5, endSize: 2, startColor: new THREE.Color(0.5, 0.5, 0.5), endColor: new THREE.Color(0.3, 0.3, 0.3), velocity: new THREE.Vector3(0, 1, 0), velocityVar: new THREE.Vector3(0.3, 0.5, 0.3), gravity: new THREE.Vector3(0, 0.5, 0), blending: 'normal' },
+      explosion: { maxParticles: 200, emissionRate: 0, minLife: 0.3, maxLife: 0.8, startSize: 1.5, endSize: 0.2, startColor: new THREE.Color(1, 0.9, 0.5), endColor: new THREE.Color(1, 0.2, 0), velocity: new THREE.Vector3(0, 5, 0), velocityVar: new THREE.Vector3(8, 8, 8), gravity: new THREE.Vector3(0, -5, 0), blending: 'additive' },
+      magic: { maxParticles: 300, emissionRate: 40, minLife: 1, maxLife: 2, startSize: 0.3, endSize: 0, startColor: new THREE.Color(0.5, 0.8, 1), endColor: new THREE.Color(1, 0.5, 0.8), velocity: new THREE.Vector3(0, 1, 0), velocityVar: new THREE.Vector3(1, 2, 1), gravity: new THREE.Vector3(0, 2, 0), blending: 'additive' },
+      spark: { maxParticles: 100, emissionRate: 20, minLife: 0.2, maxLife: 0.5, startSize: 0.1, endSize: 0.02, startColor: new THREE.Color(1, 1, 0.8), endColor: new THREE.Color(1, 0.5, 0), velocity: new THREE.Vector3(0, 3, 0), velocityVar: new THREE.Vector3(3, 5, 3), gravity: new THREE.Vector3(0, -9.8, 0), blending: 'additive' },
+      rain: { maxParticles: 2000, emissionRate: 500, minLife: 1, maxLife: 2, startSize: 0.05, endSize: 0.05, startColor: new THREE.Color(0.7, 0.8, 1), endColor: new THREE.Color(0.7, 0.8, 1), velocity: new THREE.Vector3(0, -10, 0), velocityVar: new THREE.Vector3(2, 5, 2), gravity: new THREE.Vector3(0, -9.8, 0), blending: 'normal' }
+    };
+
+    // ==================== 物理系统 ====================
+    class PhysicsManager {
+      constructor(scene) {
+        this.scene = scene;
+        this.world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0) });
+        const defaultMaterial = new CANNON.Material('default');
+        const defaultContact = new CANNON.ContactMaterial(defaultMaterial, defaultMaterial, { friction: 0.3, restitution: 0.3 });
+        this.world.addContactMaterial(defaultContact);
+        this.bodies = []; this.paused = false; this.timeScale = 1;
+      }
+      addBox(mesh, mass = 1) {
+        const shape = new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5));
+        const body = new CANNON.Body({ mass, shape, position: new CANNON.Vec3(mesh.position.x, mesh.position.y, mesh.position.z) });
+        this.world.addBody(body); this.bodies.push({ mesh, body }); return body;
+      }
+      addSphere(mesh, radius = 0.5, mass = 1) {
+        const shape = new CANNON.Sphere(radius);
+        const body = new CANNON.Body({ mass, shape, position: new CANNON.Vec3(mesh.position.x, mesh.position.y, mesh.position.z) });
+        this.world.addBody(body); this.bodies.push({ mesh, body }); return body;
+      }
+      addGround() { const shape = new CANNON.Plane(); const body = new CANNON.Body({ mass: 0, shape }); body.quaternion.setFromEuler(-Math.PI / 2, 0, 0); this.world.addBody(body); return body; }
+      update(deltaTime) { if (this.paused) return; const dt = deltaTime * this.timeScale; this.world.step(1/60, dt, 3); this.bodies.forEach(({ mesh, body }) => { mesh.position.copy(body.position); mesh.quaternion.copy(body.quaternion); }); }
+      applyExplosion(center, force, radius) { this.bodies.forEach(({ body }) => { const dist = body.position.distanceTo(new CANNON.Vec3(center.x, center.y, center.z)); if (dist < radius) { const dir = body.position.vsub(new CANNON.Vec3(center.x, center.y, center.z)); dir.normalize(); const f = force * (1 - dist / radius); body.applyImpulse(dir.scale(f), body.position); } }); }
+      applyUpForce(force) { this.bodies.forEach(({ body }) => { if (body.mass > 0) body.applyImpulse(new CANNON.Vec3(0, force, 0), body.position); }); }
+      togglePause() { this.paused = !this.paused; return this.paused; }
+      setGravity(y) { this.world.gravity.set(0, y, 0); }
+      clear() { this.bodies.forEach(({ body }) => this.world.removeBody(body)); this.bodies = []; this.addGround(); }
+      getBodyCount() { return this.bodies.length; }
+    }
+
+    // ==================== 命令系统 (撤销/重做) ====================
+    class CommandManager {
+      constructor(options = {}) { this.history = []; this.index = -1; this.maxSize = options.maxSize || 50; this.listeners = []; }
+      execute(cmd) {
+        if (this.index < this.history.length - 1) this.history = this.history.slice(0, this.index + 1);
+        cmd.execute(); this.history.push(cmd); this.index++;
+        if (this.history.length > this.maxSize) { this.history.shift(); this.index--; }
+        this.notify();
+      }
+      undo() { if (this.index < 0) return false; this.history[this.index].undo(); this.index--; this.notify(); return true; }
+      redo() { if (this.index >= this.history.length - 1) return false; this.index++; this.history[this.index].execute(); this.notify(); return true; }
+      canUndo() { return this.index >= 0; }
+      canRedo() { return this.index < this.history.length - 1; }
+      notify() { this.listeners.forEach(fn => fn({ canUndo: this.canUndo(), canRedo: this.canRedo(), index: this.index, total: this.history.length })); }
+      onChange(fn) { this.listeners.push(fn); }
+      clear() { this.history = []; this.index = -1; this.notify(); }
+    }
+
+    class AddObjectCmd {
+      constructor(editor, object, physics = false) { this.name = '添加 ' + object.name; this.editor = editor; this.object = object; this.parent = editor.scene; this.physics = physics; }
+      execute() { this.parent.add(this.object); this.editor.objects.push(this.object); if (this.physics && this.object.isMesh) this.editor.physics.addBox(this.object, 1); this.editor.updateTree(); }
+      undo() { this.parent.remove(this.object); this.editor.objects = this.editor.objects.filter(o => o !== this.object); if (this.editor.selected === this.object) this.editor.select(null); this.editor.updateTree(); }
+    }
+
+    class TransformCmd {
+      constructor(object, oldTransform) { this.name = '变换'; this.object = object; this.oldPos = oldTransform.position.clone(); this.oldRot = oldTransform.rotation.clone(); this.oldScale = oldTransform.scale.clone(); this.newPos = object.position.clone(); this.newRot = object.rotation.clone(); this.newScale = object.scale.clone(); }
+      execute() { this.object.position.copy(this.newPos); this.object.rotation.copy(this.newRot); this.object.scale.copy(this.newScale); }
+      undo() { this.object.position.copy(this.oldPos); this.object.rotation.copy(this.oldRot); this.object.scale.copy(this.oldScale); }
+    }
+
+    // ==================== 主编辑器 ====================
+    class Editor {
+      constructor() {
+        this.scene = null; this.camera = null; this.renderer = null; this.composer = null; this.bloomPass = null;
+        this.controls = null; this.transformCtrl = null; this.physics = null;
+        this.raycaster = new THREE.Raycaster(); this.mouse = new THREE.Vector2();
+        this.objects = []; this.particleSystems = []; this.selected = null; this.cmdMgr = new CommandManager();
+        this.beforeTransform = null; this.isPhysicsPaused = false;
+        this.init();
+      }
+
+      init() {
+        const canvas = document.getElementById('canvas');
+        this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+        this.renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.setClearColor(0x0a0a0a); this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.scene = new THREE.Scene(); this.scene.background = new THREE.Color(0x0a0a0a); this.scene.name = 'My Scene';
+        this.camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+        this.camera.position.set(5, 5, 5); this.camera.lookAt(0, 0, 0);
+        this.controls = new OrbitControls(this.camera, canvas); this.controls.enableDamping = true;
+        this.transformCtrl = new TransformControls(this.camera, canvas);
+        this.transformCtrl.addEventListener('dragging-changed', (e) => { this.controls.enabled = !e.value; });
+        this.transformCtrl.addEventListener('mouseDown', () => { if (this.selected) this.beforeTransform = { position: this.selected.position.clone(), rotation: this.selected.rotation.clone(), scale: this.selected.scale.clone() }; });
+        this.transformCtrl.addEventListener('mouseUp', () => { if (this.selected && this.beforeTransform) { this.cmdMgr.execute(new TransformCmd(this.selected, this.beforeTransform)); this.beforeTransform = null; } });
+        this.transformCtrl.addEventListener('change', () => this.updateInputs());
+        this.scene.add(this.transformCtrl);
+        this.composer = new EffectComposer(this.renderer);
+        this.composer.addPass(new RenderPass(this.scene, this.camera));
+        this.bloomPass = new UnrealBloomPass(new THREE.Vector2(canvas.clientWidth, canvas.clientHeight), 0.5, 0.4, 0.85);
+        this.composer.addPass(this.bloomPass);
+        this.composer.addPass(new OutputPass());
+        this.physics = new PhysicsManager(this.scene); this.physics.addGround();
+        const ambient = new THREE.AmbientLight(0x404040, 0.3); ambient.name = '环境光'; this.scene.add(ambient);
+        const dir = new THREE.DirectionalLight(0xffffff, 1); dir.name = '主光源'; dir.position.set(5, 10, 5); dir.castShadow = true; this.scene.add(dir);
+        const grid = new THREE.GridHelper(20, 20, 0x333333, 0x1a1a1a); grid.name = '网格'; this.scene.add(grid);
+        window.addEventListener('resize', () => this.onResize());
+        canvas.addEventListener('pointerdown', (e) => this.onPointerDown(e));
+        window.addEventListener('keydown', (e) => this.onKeyDown(e));
+        this.cmdMgr.onChange((state) => { document.getElementById('btn-undo').disabled = !state.canUndo; document.getElementById('btn-redo').disabled = !state.canRedo; document.getElementById('stat-history').textContent = `${state.index + 1}/${state.total}`; });
+        this.animate();
+        document.getElementById('loading').classList.add('hidden');
+        this.addPhysicsBox(); this.addParticleSystem('fire');
+      }
+
+      animate() { requestAnimationFrame(() => this.animate()); this.physics.update(0.016); this.particleSystems.forEach(ps => ps.update(0.016)); this.controls.update(); this.composer.render(); this.updateStats(); }
+
+      onResize() { const canvas = document.getElementById('canvas'); const parent = canvas.parentElement; this.camera.aspect = parent.clientWidth / parent.clientHeight; this.camera.updateProjectionMatrix(); this.renderer.setSize(parent.clientWidth, parent.clientHeight); this.composer.setSize(parent.clientWidth, parent.clientHeight); }
+
+      onPointerDown(e) { if (e.button !== 0) return; const canvas = document.getElementById('canvas'); const rect = canvas.getBoundingClientRect(); this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1; this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1; this.raycaster.setFromCamera(this.mouse, this.camera); const meshes = this.objects.filter(o => o.isMesh); const intersects = this.raycaster.intersectObjects(meshes); if (intersects.length > 0 && !this.transformCtrl.dragging) this.select(intersects[0].object); else if (!this.transformCtrl.dragging) this.select(null); }
+
+      onKeyDown(e) { if (e.target.tagName === 'INPUT') return; switch(e.key.toLowerCase()) { case 't': this.setTool('translate'); break; case 'r': this.setTool('rotate'); break; case 's': this.setTool('scale'); break; case 'delete': case 'backspace': this.deleteSelected(); break; case 'z': if (e.ctrlKey || e.metaKey) e.shiftKey ? this.redo() : this.undo(); break; } }
+
+      // 添加对象
+      addCube() { const geo = new THREE.BoxGeometry(1, 1, 1); const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5) }); const mesh = new THREE.Mesh(geo, mat); mesh.name = '立方体 ' + (this.objects.filter(o => o.name?.includes('立方')).length + 1); mesh.position.set((Math.random()-0.5)*4, 1, (Math.random()-0.5)*4); mesh.castShadow = true; this.cmdMgr.execute(new AddObjectCmd(this, mesh)); this.select(mesh); }
+      addSphere() { const geo = new THREE.SphereGeometry(0.5, 32, 16); const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5) }); const mesh = new THREE.Mesh(geo, mat); mesh.name = '球体 ' + (this.objects.filter(o => o.name?.includes('球')).length + 1); mesh.position.set((Math.random()-0.5)*4, 1, (Math.random()-0.5)*4); mesh.castShadow = true; this.cmdMgr.execute(new AddObjectCmd(this, mesh)); this.select(mesh); }
+      addPhysicsBox() { const geo = new THREE.BoxGeometry(1, 1, 1); const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5) }); const mesh = new THREE.Mesh(geo, mat); mesh.name = '物理盒子 ' + (this.objects.filter(o => o.name?.includes('物理')).length + 1); mesh.position.set((Math.random()-0.5)*4, 5 + Math.random() * 3, (Math.random()-0.5)*4); mesh.rotation.set(Math.random(), Math.random(), Math.random()); mesh.castShadow = true; this.cmdMgr.execute(new AddObjectCmd(this, mesh, true)); this.select(mesh); }
+      addEmissive() { const geo = new THREE.BoxGeometry(0.8, 0.8, 0.8); const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(Math.random() * 0.1 + 0.5, 0.8, 0.5), emissive: new THREE.Color().setHSL(Math.random() * 0.1 + 0.05, 1, 0.5), emissiveIntensity: 2 }); const mesh = new THREE.Mesh(geo, mat); mesh.name = '发光体 ' + (this.objects.filter(o => o.name?.includes('发光')).length + 1); mesh.position.set((Math.random()-0.5)*3, 1, (Math.random()-0.5)*3); mesh.castShadow = true; this.cmdMgr.execute(new AddObjectCmd(this, mesh)); this.select(mesh); }
+
+      // 粒子系统
+      addParticleSystem(presetName) { const preset = ParticlePresets[presetName]; if (!preset) return; const ps = new ParticleSystem(this.scene, preset); ps.setPosition(new THREE.Vector3((Math.random()-0.5)*3, 1, (Math.random()-0.5)*3)); this.particleSystems.push(ps); if (presetName === 'explosion') ps.burst(50); }
+      burstParticles() { this.particleSystems.forEach(ps => ps.burst(20)); }
+      clearParticles() { this.particleSystems.forEach(ps => ps.clear()); }
+
+      // 选择和变换
+      select(obj) { this.selected = obj; if (obj) { this.transformCtrl.attach(obj); this.transformCtrl.visible = true; } else { this.transformCtrl.detach(); this.transformCtrl.visible = false; } this.updateInputs(); this.updateTree(); }
+      setTool(mode) { this.transformCtrl.setMode(mode); document.querySelectorAll('#viewport-tools button').forEach(b => b.classList.remove('active')); document.getElementById('tool-' + mode).classList.add('active'); }
+      toggleSpace() { const current = this.transformCtrl.space; const next = current === 'local' ? 'world' : 'local'; this.transformCtrl.setSpace(next); document.getElementById('tool-local').textContent = next === 'local' ? '⊕' : '⊙'; }
+      deleteSelected() { if (this.selected) { this.scene.remove(this.selected); this.objects = this.objects.filter(o => o !== this.selected); this.select(null); this.updateTree(); } }
+      undo() { this.cmdMgr.undo(); this.updateInputs(); }
+      redo() { this.cmdMgr.redo(); this.updateInputs(); }
+
+      // 更新属性
+      updateInputs() { if (!this.selected) { ['pos-x','pos-y','pos-z','rot-x','rot-y','rot-z','scale-x','scale-y','scale-z'].forEach(id => document.getElementById(id).value = id.startsWith('scale') ? 1 : 0); return; } const set = (id, v) => document.getElementById(id).value = v.toFixed(2); set('pos-x', this.selected.position.x); set('pos-y', this.selected.position.y); set('pos-z', this.selected.position.z); set('rot-x', this.selected.rotation.x * 180 / Math.PI); set('rot-y', this.selected.rotation.y * 180 / Math.PI); set('rot-z', this.selected.rotation.z * 180 / Math.PI); set('scale-x', this.selected.scale.x); set('scale-y', this.selected.scale.y); set('scale-z', this.selected.scale.z); if (this.selected.material) { document.getElementById('mat-color').value = '#' + this.selected.material.color.getHexString(); if (this.selected.material.emissive) document.getElementById('mat-emissive').value = '#' + this.selected.material.emissive.getHexString(); document.getElementById('mat-roughness').value = this.selected.material.roughness || 0.5; document.getElementById('val-roughness').textContent = (this.selected.material.roughness || 0.5).toFixed(2); document.getElementById('mat-metalness').value = this.selected.material.metalness || 0; document.getElementById('val-metalness').textContent = (this.selected.material.metalness || 0).toFixed(2); } }
+      updateTransform() { if (!this.selected) return; const get = (id) => parseFloat(document.getElementById(id).value) || 0; this.selected.position.set(get('pos-x'), get('pos-y'), get('pos-z')); this.selected.rotation.set(get('rot-x') * Math.PI / 180, get('rot-y') * Math.PI / 180, get('rot-z') * Math.PI / 180); this.selected.scale.set(get('scale-x'), get('scale-y'), get('scale-z')); }
+      updateMaterial(prop, value) { if (!this.selected || !this.selected.material) return; if (prop === 'color' || prop === 'emissive') this.selected.material[prop].set(value); else { this.selected.material[prop] = parseFloat(value); document.getElementById('val-' + prop).textContent = parseFloat(value).toFixed(2); } this.selected.material.needsUpdate = true; }
+
+      // 后处理
+      toggleBloom(enabled) { this.bloomPass.enabled = enabled; document.getElementById('st-effects').textContent = enabled ? '✨ Bloom' : '⏹️ 无效果'; }
+      setBloomStrength(v) { this.bloomPass.strength = parseFloat(v); document.getElementById('val-bloom-strength').textContent = v; }
+      setBloomRadius(v) { this.bloomPass.radius = parseFloat(v); document.getElementById('val-bloom-radius').textContent = v; }
+      setBloomThreshold(v) { this.bloomPass.threshold = parseFloat(v); document.getElementById('val-bloom-threshold').textContent = v; }
+      applyPreset(name) { const presets = { cinematic: { strength: 0.8, radius: 0.6, threshold: 0.75 }, scifi: { strength: 2.0, radius: 0.8, threshold: 0.5 }, dreamy: { strength: 1.5, radius: 1.0, threshold: 0.6 }, performance: { strength: 0.3, radius: 0.3, threshold: 0.8 }, none: { strength: 0, radius: 0, threshold: 1 } }; const p = presets[name]; if (p) { this.bloomPass.strength = p.strength; this.bloomPass.radius = p.radius; this.bloomPass.threshold = p.threshold; this.bloomPass.enabled = p.strength > 0; document.getElementById('pp-bloom').checked = p.strength > 0; document.getElementById('st-effects').textContent = p.strength > 0 ? '✨ Bloom' : '⏹️ 无效果'; } }
+
+      // 物理
+      togglePhysics() { this.isPhysicsPaused = this.physics.togglePause(); document.getElementById('btn-physics').textContent = this.isPhysicsPaused ? '▶️ 继续' : '⏸️ 物理'; document.getElementById('st-physics').textContent = this.isPhysicsPaused ? '⏸️ 物理暂停' : '⚙️ 物理运行'; }
+      updateGravity() { const val = parseFloat(document.getElementById('gravity-y').value); document.getElementById('val-gravity').textContent = val.toFixed(1); this.physics.setGravity(val); }
+      applyExplosion() { this.physics.applyExplosion(new THREE.Vector3(0, 0, 0), 15, 10); }
+      applyUpForce() { this.physics.applyUpForce(5); }
+
+      // 场景
+      newScene() { if (!confirm('确定新建场景？')) return; this.physics.clear(); this.particleSystems.forEach(ps => ps.dispose()); this.particleSystems = []; this.objects.forEach(obj => this.scene.remove(obj)); this.objects = []; this.cmdMgr.clear(); this.select(null); this.physics.addGround(); }
+      updateTree() { const tree = document.getElementById('scene-tree'); if (this.objects.length === 0) { tree.innerHTML = '<div style="color: #555; font-size: 11px; text-align: center; padding: 20px;">暂无对象</div>'; return; } let html = ''; this.objects.forEach((obj, i) => { const selected = obj === this.selected ? 'selected' : ''; const icon = obj.isMesh ? '🎲' : '💡'; html += `<div class="tree-item ${selected}" onclick="editor.select(editor.objects[${i}])">${icon} ${obj.name}</div>`; }); tree.innerHTML = html; document.getElementById('st-obj').textContent = this.objects.length + ' 对象'; document.getElementById('stat-objects').textContent = this.objects.length; }
+      updateStats() { const pCount = this.particleSystems.reduce((sum, ps) => sum + ps.particleCount, 0); document.getElementById('stat-particles').textContent = pCount; document.getElementById('stat-bodies').textContent = this.physics.getBodyCount(); }
+
+      // 导出
+      showExportDialog() { document.getElementById('export-dialog').classList.add('active'); }
+      hideExportDialog() { document.getElementById('export-dialog').classList.remove('active'); }
+      performExport() {
+        const title = document.getElementById('export-title').value || 'My Scene';
+        const sceneData = { version: '1.0.0', metadata: { name: title, created: Date.now() }, scene: this.serializeObject(this.scene) };
+        const sceneJSON = JSON.stringify(sceneData, null, 2);
+        const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title><style>*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0a}#c{width:100%;height:100%}</style></head><body><div id="c"></div><script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script><script type="module">import*as THREE from'three';import{OrbitControls}from'three/addons/controls/OrbitControls.js';import{EffectComposer}from'three/addons/postprocessing/EffectComposer.js';import{RenderPass}from'three/addons/postprocessing/RenderPass.js';import{UnrealBloomPass}from'three/addons/postprocessing/UnrealBloomPass.js';import{OutputPass}from'three/addons/postprocessing/OutputPass.js';const data=${sceneJSON};class Player{constructor(){this.c=document.getElementById('c');this.r=new THREE.WebGLRenderer({antialias:true});this.r.setSize(innerWidth,innerHeight);this.r.toneMapping=THREE.ACESFilmicToneMapping;this.c.appendChild(this.r.domElement);this.scene=this.parse(data.scene);this.cam=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.1,1000);this.cam.position.set(5,5,5);this.cam.lookAt(0,0,0);this.ctrl=new OrbitControls(this.cam,this.r.domElement);this.ctrl.enableDamping=true;this.composer=new EffectComposer(this.r);this.composer.addPass(new RenderPass(this.scene,this.cam));this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.5,0.4,0.85));this.composer.addPass(new OutputPass());addEventListener('resize',()=>{this.cam.aspect=innerWidth/innerHeight;this.cam.updateProjectionMatrix();this.r.setSize(innerWidth,innerHeight);this.composer.setSize(innerWidth,innerHeight)});this.animate()}parse(data){const scene=new THREE.Scene();const parseObj=(d)=>{let obj;switch(d.type){case'Mesh':const geo=d.geometry.type==='BoxGeometry'?new THREE.BoxGeometry(1,1,1):d.geometry.type==='SphereGeometry'?new THREE.SphereGeometry(0.5,32,16):new THREE.BoxGeometry(1,1,1);const mat=new THREE.MeshStandardMaterial({color:new THREE.Color(...d.material.color)});obj=new THREE.Mesh(geo,mat);break;case'AmbientLight':obj=new THREE.AmbientLight(new THREE.Color(...d.light.color),d.light.intensity);break;case'DirectionalLight':obj=new THREE.DirectionalLight(new THREE.Color(...d.light.color),d.light.intensity);break;default:obj=new THREE.Object3D()}obj.position.set(...d.transform.position);obj.rotation.set(d.transform.rotation[0]*Math.PI/180,d.transform.rotation[1]*Math.PI/180,d.transform.rotation[2]*Math.PI/180);obj.scale.set(...d.transform.scale);d.children.forEach(c=>obj.add(parseObj(c)));return obj};data.children.forEach(c=>scene.add(parseObj(c)));return scene}animate(){requestAnimationFrame(()=>this.animate());this.ctrl.update();this.composer.render()}}new Player()</script></body></html>`;
+        const blob = new Blob([html], { type: 'text/html' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = title.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.html'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); this.hideExportDialog(); alert('✅ 场景已导出！');
+      }
+      serializeObject(obj) { const data = { uuid: obj.uuid, type: obj.type, name: obj.name, visible: obj.visible, transform: { position: [obj.position.x, obj.position.y, obj.position.z], rotation: [obj.rotation.x * 180 / Math.PI, obj.rotation.y * 180 / Math.PI, obj.rotation.z * 180 / Math.PI], scale: [obj.scale.x, obj.scale.y, obj.scale.z] }, children: [] }; if (obj.isMesh) { data.geometry = { type: obj.geometry.type }; data.material = { type: obj.material.type, color: [obj.material.color.r, obj.material.color.g, obj.material.color.b] }; } if (obj.isLight) { data.light = { color: [obj.color.r, obj.color.g, obj.color.b], intensity: obj.intensity }; } obj.children.filter(c => !c.isCamera && !c.isTransformControls).forEach(c => data.children.push(this.serializeObject(c))); return data; }
+    }
+
+    window.editor = new Editor();
+    window.switchTab = (tab, el) => { document.querySelectorAll('.tab').forEach(t => t.classList.remove('active')); el.classList.add('active'); ['scene', 'particles', 'presets'].forEach(t => document.getElementById('tab-' + t).style.display = t === tab ? 'block' : 'none'); };
+    let frames = 0, last = performance.now(); setInterval(() => { const now = performance.now(); document.getElementById('st-fps').textContent = Math.round(frames * 1000 / (now - last)) + ' FPS'; frames = 0; last = now; }, 1000); const origAnimate = window.editor.animate; window.editor.animate = function() { frames++; origAnimate.call(this); };
+  </script>
+</body>
+</html>

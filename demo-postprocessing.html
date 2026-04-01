@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebGPU Editor + Post Processing</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; font-family: system-ui, sans-serif; background: #0a0a0a; }
+    
+    #app { display: flex; flex-direction: column; width: 100%; height: 100%; }
+    
+    /* 工具栏 */
+    #toolbar { 
+      height: 46px; 
+      background: linear-gradient(180deg, #2d2d2d 0%, #252525 100%); 
+      border-bottom: 1px solid #333; 
+      display: flex; 
+      align-items: center; 
+      padding: 0 16px; 
+      gap: 10px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    #toolbar button { 
+      padding: 7px 16px; 
+      background: #3a3a3a; 
+      color: #e0e0e0; 
+      border: 1px solid #444; 
+      border-radius: 6px; 
+      cursor: pointer; 
+      font-size: 12px; 
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #toolbar button:hover { 
+      background: #444; 
+      border-color: #555;
+      transform: translateY(-1px);
+    }
+    #toolbar button.primary { 
+      background: linear-gradient(180deg, #0e7bc9 0%, #0a5a94 100%);
+      border-color: #0e7bc9;
+      color: white;
+    }
+    #toolbar button.primary:hover { 
+      background: linear-gradient(180deg, #1188d9 0%, #0c6aa8 100%);
+    }
+    #toolbar button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    #toolbar .separator { width: 1px; height: 24px; background: #444; margin: 0 4px; }
+    
+    /* 主布局 */
+    #main { flex: 1; display: flex; overflow: hidden; }
+    
+    /* 左侧面板 */
+    #left { width: 260px; background: #1e1e1e; border-right: 1px solid #333; display: flex; flex-direction: column; }
+    .panel-header { 
+      height: 36px; 
+      background: linear-gradient(180deg, #2d2d2d 0%, #252525 100%); 
+      display: flex; 
+      align-items: center; 
+      padding: 0 14px; 
+      font-size: 12px; 
+      font-weight: 600; 
+      color: #ddd; 
+      border-bottom: 1px solid #333;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .panel-content { flex: 1; overflow: auto; padding: 10px; }
+    
+    /* 场景树 */
+    .tree-item { 
+      padding: 8px 10px; 
+      cursor: pointer; 
+      border-radius: 4px; 
+      display: flex; 
+      align-items: center; 
+      gap: 8px; 
+      font-size: 12px; 
+      color: #bbb;
+      margin-bottom: 2px;
+      transition: all 0.15s;
+    }
+    .tree-item:hover { background: rgba(255,255,255,0.05); }
+    .tree-item.selected { 
+      background: rgba(14, 123, 201, 0.25); 
+      color: #6cbfff;
+      border-left: 3px solid #0e7bc9;
+    }
+    .tree-item .icon { font-size: 14px; opacity: 0.8; }
+    .tree-item .actions { margin-left: auto; display: none; gap: 4px; }
+    .tree-item:hover .actions { display: flex; }
+    .tree-item .actions button { 
+      background: transparent; 
+      border: none; 
+      color: #888; 
+      cursor: pointer; 
+      padding: 3px 5px; 
+      font-size: 11px;
+      border-radius: 3px;
+    }
+    .tree-item .actions button:hover { color: #fff; background: rgba(255,255,255,0.1); }
+    
+    /* 视口 */
+    #center { flex: 1; position: relative; background: #0a0a0a; }
+    #canvas { width: 100%; height: 100%; display: block; }
+    
+    /* 视口工具栏 */
+    #viewport-toolbar { 
+      position: absolute; 
+      top: 14px; 
+      left: 50%; 
+      transform: translateX(-50%); 
+      display: flex; 
+      gap: 6px; 
+      padding: 6px; 
+      background: rgba(30, 30, 30, 0.95); 
+      border-radius: 10px; 
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+    #viewport-toolbar button { 
+      width: 38px; 
+      height: 38px; 
+      background: transparent; 
+      border: none; 
+      color: #aaa; 
+      cursor: pointer; 
+      border-radius: 8px; 
+      font-size: 16px; 
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #viewport-toolbar button:hover { background: rgba(255,255,255,0.08); color: #fff; }
+    #viewport-toolbar button.active { 
+      background: #0e7bc9; 
+      color: white;
+      box-shadow: 0 2px 8px rgba(14, 123, 201, 0.4);
+    }
+    
+    /* 右侧面板 - 属性 */
+    #right { width: 320px; background: #1e1e1e; border-left: 1px solid #333; display: flex; flex-direction: column; overflow-y: auto; }
+    
+    /* 属性组 */
+    .prop-group { border-bottom: 1px solid #2a2a2a; }
+    .prop-group-header { 
+      height: 32px; 
+      background: linear-gradient(180deg, #2a2a2a 0%, #252525 100%); 
+      display: flex; 
+      align-items: center; 
+      padding: 0 14px; 
+      font-size: 11px; 
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #999; 
+      cursor: pointer; 
+      user-select: none;
+      border-bottom: 1px solid #333;
+    }
+    .prop-group-header::before {
+      content: '▼';
+      margin-right: 8px;
+      font-size: 8px;
+      transition: transform 0.2s;
+    }
+    .prop-group.collapsed .prop-group-header::before { transform: rotate(-90deg); }
+    .prop-group.collapsed .prop-group-content { display: none; }
+    .prop-group-content { padding: 14px; }
+    
+    /* 属性行 */
+    .prop-row { display: flex; align-items: center; margin-bottom: 12px; gap: 10px; }
+    .prop-row:last-child { margin-bottom: 0; }
+    .prop-label { width: 80px; color: #888; font-size: 11px; flex-shrink: 0; font-weight: 500; }
+    .prop-input { flex: 1; display: flex; gap: 6px; }
+    .prop-input input[type="number"], .prop-input input[type="text"] { 
+      flex: 1; 
+      padding: 6px 10px; 
+      background: #2a2a2a; 
+      border: 1px solid #3a3a3a; 
+      border-radius: 4px; 
+      color: #ddd; 
+      font-size: 11px; 
+      width: 0;
+      transition: all 0.2s;
+    }
+    .prop-input input:focus { 
+      outline: none; 
+      border-color: #0e7bc9; 
+      background: #323232;
+    }
+    .prop-input input[type="color"] { 
+      width: 32px; 
+      height: 28px; 
+      padding: 2px; 
+      background: #2a2a2a; 
+      border: 1px solid #3a3a3a; 
+      border-radius: 4px; 
+      cursor: pointer; 
+    }
+    .prop-input input[type="range"] { 
+      flex: 1; 
+      height: 4px;
+      -webkit-appearance: none;
+      background: #3a3a3a;
+      border-radius: 2px;
+      outline: none;
+    }
+    .prop-input input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      background: #0e7bc9;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .prop-input input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+      background: #1188d9;
+    }
+    .prop-value { min-width: 36px; text-align: right; font-size: 10px; color: #666; }
+    
+    /* 复选框 */
+    .checkbox-row { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+    .checkbox-row input { 
+      width: 16px; 
+      height: 16px; 
+      accent-color: #0e7bc9;
+    }
+    
+    /* 状态栏 */
+    #statusbar { 
+      height: 26px; 
+      background: linear-gradient(180deg, #007acc 0%, #0066aa 100%); 
+      display: flex; 
+      align-items: center; 
+      padding: 0 14px; 
+      font-size: 11px; 
+      color: white;
+      box-shadow: 0 -1px 3px rgba(0,0,0,0.2);
+    }
+    #statusbar span { margin-right: 24px; display: flex; align-items: center; gap: 6px; }
+    #statusbar .separator { margin: 0; color: rgba(255,255,255,0.3); }
+    
+    /* 加载 */
+    #loading { 
+      position: fixed; 
+      inset: 0; 
+      background: #0a0a0a; 
+      display: flex; 
+      flex-direction: column; 
+      align-items: center; 
+      justify-content: center; 
+      color: #666; 
+      z-index: 1000; 
+    }
+    #loading.hidden { display: none; }
+    .spinner { 
+      width: 48px; 
+      height: 48px; 
+      border: 3px solid #222; 
+      border-top-color: #0e7bc9; 
+      border-radius: 50%; 
+      animation: spin 1s linear infinite; 
+      margin-bottom: 20px; 
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    .empty-state { padding: 50px 20px; text-align: center; color: #555; font-size: 12px; }
+    
+    #file-input { display: none; }
+    
+    /* 效果预览指示器 */
+    .effect-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      background: #0e7bc9;
+      color: white;
+      border-radius: 3px;
+      font-size: 9px;
+      margin-left: 6px;
+    }
+    
+    /* 提示信息 */
+    .info-text {
+      font-size: 10px;
+      color: #666;
+      padding: 8px 0;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 工具栏 -->
+    <div id="toolbar">
+      <button onclick="editor.newScene()">🗑 新建</button>
+      <button onclick="editor.loadScene()">📂 打开</button>
+      <button onclick="editor.saveScene()">💾 保存</button>
+      <div class="separator"></div>
+      <button id="btn-undo" onclick="editor.undo()" disabled>↶ 撤销</button>
+      <button id="btn-redo" onclick="editor.redo()" disabled>↷ 重做</button>
+      <div class="separator"></div>
+      <button onclick="editor.addCube()" class="primary">⧉ 立方体</button>
+      <button onclick="editor.addSphere()" class="primary">○ 球体</button>
+      <button onclick="editor.addEmissive()" class="primary">✨ 发光体</button>
+      <button onclick="editor.addLight()" class="primary">💡 光源</button>
+      <div style="flex:1"></div>
+      <button onclick="editor.importGLTF()">📁 导入</button>
+      <button onclick="editor.exportScene()">📦 导出</button>
+    </div>
+
+    <!-- 主区域 -->
+    <div id="main">
+      <!-- 左侧面板 -->
+      <div id="left">
+        <div class="panel-header">📂 场景层级</div>
+        <div class="panel-content" id="scene-tree">
+          <div class="empty-state">暂无对象</div>
+        </div>
+      </div>
+
+      <!-- 中间视口 -->
+      <div id="center">
+        <canvas id="canvas"></canvas>
+        <div id="viewport-toolbar">
+          <button id="tool-translate" class="active" title="移动 (T)">↔</button>
+          <button id="tool-rotate" title="旋转 (R)">↻</button>
+          <button id="tool-scale" title="缩放 (S)">⤢</button>
+          <button id="tool-local" title="切换坐标系">⊕</button>
+        </div>
+      </div>
+
+      <!-- 右侧面板 -->
+      <div id="right">
+        <!-- 变换 -->
+        <div class="prop-group">
+          <div class="prop-group-header">🔄 变换</div>
+          <div class="prop-group-content">
+            <div class="prop-row">
+              <span class="prop-label">位置</span>
+              <div class="prop-input">
+                <input id="pos-x" type="number" step="0.1" placeholder="X">
+                <input id="pos-y" type="number" step="0.1" placeholder="Y">
+                <input id="pos-z" type="number" step="0.1" placeholder="Z">
+              </div>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">旋转</span>
+              <div class="prop-input">
+                <input id="rot-x" type="number" step="1" placeholder="X">
+                <input id="rot-y" type="number" step="1" placeholder="Y">
+                <input id="rot-z" type="number" step="1" placeholder="Z">
+              </div>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">缩放</span>
+              <div class="prop-input">
+                <input id="scale-x" type="number" step="0.1" value="1">
+                <input id="scale-y" type="number" step="0.1" value="1">
+                <input id="scale-z" type="number" step="0.1" value="1">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 材质 -->
+        <div class="prop-group">
+          <div class="prop-group-header">🎨 材质</div>
+          <div class="prop-group-content">
+            <div class="prop-row">
+              <span class="prop-label">颜色</span>
+              <div class="prop-input">
+                <input id="mat-color" type="color" value="#888888">
+              </div>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">自发光</span>
+              <div class="prop-input">
+                <input id="mat-emissive" type="color" value="#000000">
+              </div>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">粗糙度</span>
+              <input id="mat-roughness" type="range" min="0" max="1" step="0.01" value="0.5">
+              <span class="prop-value" id="val-roughness">0.5</span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">金属度</span>
+              <input id="mat-metalness" type="range" min="0" max="1" step="0.01" value="0">
+              <span class="prop-value" id="val-metalness">0</span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">不透明度</span>
+              <input id="mat-opacity" type="range" min="0" max="1" step="0.01" value="1">
+              <span class="prop-value" id="val-opacity">1</span>
+            </div>
+            <div class="prop-row">
+              <label class="checkbox-row">
+                <input id="mat-wireframe" type="checkbox">
+                <span>线框模式</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 后处理效果 -->
+        <div class="prop-group">
+          <div class="prop-group-header">
+            ✨ 后处理效果
+            <span class="effect-badge" id="pp-badge">WebGL2</span>
+          </div>
+          <div class="prop-group-content">
+            <div class="info-text">
+              后处理效果仅在 WebGL2 模式下可用。使用 Chrome/Edge 以获得最佳效果。
+            </div>
+            
+            <!-- Bloom -->
+            <div class="prop-row">
+              <label class="checkbox-row">
+                <input id="pp-bloom-enable" type="checkbox" checked>
+                <span><strong>Bloom 辉光</strong></span>
+              </label>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">强度</span>
+              <input id="pp-bloom-strength" type="range" min="0" max="3" step="0.1" value="0.5">
+              <span class="prop-value" id="val-bloom-strength">0.5</span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">半径</span>
+              <input id="pp-bloom-radius" type="range" min="0" max="1" step="0.05" value="0.4">
+              <span class="prop-value" id="val-bloom-radius">0.4</span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">阈值</span>
+              <input id="pp-bloom-threshold" type="range" min="0" max="1" step="0.05" value="0.85">
+              <span class="prop-value" id="val-bloom-threshold">0.85</span>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #333; margin: 14px 0;">
+
+            <!-- SSAO -->
+            <div class="prop-row">
+              <label class="checkbox-row">
+                <input id="pp-ssao-enable" type="checkbox">
+                <span><strong>SSAO 环境光遮蔽</strong></span>
+              </label>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">半径</span>
+              <input id="pp-ssao-radius" type="range" min="0" max="2" step="0.1" value="0.5">
+              <span class="prop-value" id="val-ssao-radius">0.5</span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">最小距离</span>
+              <input id="pp-ssao-min" type="range" min="0" max="0.05" step="0.001" value="0.005">
+              <span class="prop-value" id="val-ssao-min">0.005</span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">最大距离</span>
+              <input id="pp-ssao-max" type="range" min="0" max="0.5" step="0.01" value="0.1">
+              <span class="prop-value" id="val-ssao-max">0.1</span>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #333; margin: 14px 0;">
+
+            <!-- 全局开关 -->
+            <div class="prop-row">
+              <label class="checkbox-row">
+                <input id="pp-enable" type="checkbox" checked>
+                <span><strong>启用后处理</strong></span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 状态栏 -->
+    <div id="statusbar">
+      <span id="st-mode">🟢 就绪</span>
+      <span class="separator">|</span>
+      <span id="st-obj">0 个对象</span>
+      <span class="separator">|</span>
+      <span id="st-render">WebGL2</span>
+      <span class="separator">|</span>
+      <span id="st-fps">-- FPS</span>
+      <span class="separator">|</span>
+      <span id="st-history">历史: 0/0</span>
+      <span class="separator">|</span>
+      <span id="st-effects">✨ Bloom</span>
+    </div>
+  </div>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <div>初始化编辑器与后处理系统...</div>
+  </div>
+
+  <input type="file" id="file-input" accept=".json,.gltf,.glb">
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { TransformControls } from 'three/addons/controls/TransformControls.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    
+    // 后处理导入
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+    // ========== 命令系统 ==========
+    class CommandManager {
+      constructor(options = {}) {
+        this.history = [];
+        this.index = -1;
+        this.maxSize = options.maxSize || 50;
+        this.listeners = [];
+      }
+
+      execute(cmd) {
+        if (this.index < this.history.length - 1) {
+          this.history = this.history.slice(0, this.index + 1);
+        }
+        cmd.execute();
+        this.history.push(cmd);
+        this.index++;
+        if (this.history.length > this.maxSize) {
+          this.history.shift();
+          this.index--;
+        }
+        this.notify();
+      }
+
+      undo() {
+        if (this.index < 0) return false;
+        this.history[this.index].undo();
+        this.index--;
+        this.notify();
+        return true;
+      }
+
+      redo() {
+        if (this.index >= this.history.length - 1) return false;
+        this.index++;
+        this.history[this.index].execute();
+        this.notify();
+        return true;
+      }
+
+      canUndo() { return this.index >= 0; }
+      canRedo() { return this.index < this.history.length - 1; }
+
+      notify() {
+        this.listeners.forEach(fn => fn({
+          canUndo: this.canUndo(),
+          canRedo: this.canRedo(),
+          index: this.index,
+          total: this.history.length
+        }));
+      }
+
+      onChange(fn) { this.listeners.push(fn); }
+      clear() { this.history = []; this.index = -1; this.notify(); }
+    }
+
+    class Command {
+      constructor(name) { this.name = name; }
+      execute() {}
+      undo() {}
+    }
+
+    class AddObjectCmd extends Command {
+      constructor(editor, object) {
+        super('添加 ' + object.name);
+        this.editor = editor;
+        this.object = object;
+        this.parent = editor.scene;
+      }
+      execute() {
+        this.parent.add(this.object);
+        this.editor.objects.push(this.object);
+        this.editor.updateTree();
+        this.editor.updateStatus();
+      }
+      undo() {
+        this.parent.remove(this.object);
+        this.editor.objects = this.editor.objects.filter(o => o !== this.object);
+        if (this.editor.selected === this.object) this.editor.select(null);
+        this.editor.updateTree();
+        this.editor.updateStatus();
+      }
+    }
+
+    class RemoveObjectCmd extends Command {
+      constructor(editor, object) {
+        super('删除 ' + object.name);
+        this.editor = editor;
+        this.object = object;
+        this.parent = object.parent;
+        this.index = this.parent.children.indexOf(object);
+      }
+      execute() {
+        this.parent.remove(this.object);
+        this.editor.objects = this.editor.objects.filter(o => o !== this.object);
+        if (this.editor.selected === this.object) this.editor.select(null);
+        this.editor.updateTree();
+        this.editor.updateStatus();
+      }
+      undo() {
+        this.parent.children.splice(this.index, 0, this.object);
+        this.object.parent = this.parent;
+        this.editor.objects.push(this.object);
+        this.editor.updateTree();
+        this.editor.updateStatus();
+      }
+    }
+
+    class TransformCmd extends Command {
+      constructor(object, oldTransform) {
+        super('变换');
+        this.object = object;
+        this.oldPos = oldTransform.position.clone();
+        this.oldRot = oldTransform.rotation.clone();
+        this.oldScale = oldTransform.scale.clone();
+        this.newPos = object.position.clone();
+        this.newRot = object.rotation.clone();
+        this.newScale = object.scale.clone();
+      }
+      execute() {
+        this.object.position.copy(this.newPos);
+        this.object.rotation.copy(this.newRot);
+        this.object.scale.copy(this.newScale);
+      }
+      undo() {
+        this.object.position.copy(this.oldPos);
+        this.object.rotation.copy(this.oldRot);
+        this.object.scale.copy(this.oldScale);
+      }
+    }
+
+    // ========== 后处理管理器 ==========
+    class PostProcessingManager {
+      constructor(renderer, scene, camera) {
+        this.renderer = renderer;
+        this.scene = scene;
+        this.camera = camera;
+        this.composer = null;
+        this.bloomPass = null;
+        this.enabled = true;
+        this.isSupported = true;
+        
+        this.config = {
+          bloom: { enabled: true, strength: 0.5, radius: 0.4, threshold: 0.85 },
+          ssao: { enabled: false, radius: 0.5, minDistance: 0.005, maxDistance: 0.1 }
+        };
+        
+        this.init();
+      }
+
+      init() {
+        try {
+          // 创建 EffectComposer
+          this.composer = new EffectComposer(this.renderer);
+          
+          // 渲染通道
+          const renderPass = new RenderPass(this.scene, this.camera);
+          this.composer.addPass(renderPass);
+          
+          // Bloom 通道
+          const size = this.renderer.getSize(new THREE.Vector2());
+          this.bloomPass = new UnrealBloomPass(
+            new THREE.Vector2(size.width, size.height),
+            this.config.bloom.strength,
+            this.config.bloom.radius,
+            this.config.bloom.threshold
+          );
+          this.composer.addPass(this.bloomPass);
+          
+          // 输出通道
+          const outputPass = new OutputPass();
+          this.composer.addPass(outputPass);
+          
+          console.log('[PostProcessing] Initialized');
+          this.isSupported = true;
+        } catch (err) {
+          console.warn('[PostProcessing] Not supported:', err);
+          this.isSupported = false;
+        }
+      }
+
+      render() {
+        if (!this.enabled || !this.isSupported) {
+          this.renderer.render(this.scene, this.camera);
+          return;
+        }
+        this.composer.render();
+      }
+
+      setSize(width, height) {
+        if (this.composer) {
+          this.composer.setSize(width, height);
+        }
+      }
+
+      // Bloom 控制
+      setBloomEnabled(enabled) {
+        this.config.bloom.enabled = enabled;
+        if (this.bloomPass) this.bloomPass.enabled = enabled;
+      }
+      setBloomStrength(v) {
+        this.config.bloom.strength = v;
+        if (this.bloomPass) this.bloomPass.strength = v;
+      }
+      setBloomRadius(v) {
+        this.config.bloom.radius = v;
+        if (this.bloomPass) this.bloomPass.radius = v;
+      }
+      setBloomThreshold(v) {
+        this.config.bloom.threshold = v;
+        if (this.bloomPass) this.bloomPass.threshold = v;
+      }
+    }
+
+    // ========== 编辑器主类 ==========
+    class Editor {
+      constructor() {
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+        this.orbitCtrl = null;
+        this.transformCtrl = null;
+        this.ppManager = null;
+        this.raycaster = new THREE.Raycaster();
+        this.mouse = new THREE.Vector2();
+        this.objects = [];
+        this.selected = null;
+        this.cmdMgr = new CommandManager({ maxSize: 50 });
+        this.beforeTransform = null;
+        
+        this.init();
+      }
+
+      async init() {
+        try {
+          const canvas = document.getElementById('canvas');
+          
+          // 使用 WebGL2（后处理效果更好支持）
+          this.renderer = new THREE.WebGLRenderer({ 
+            canvas, 
+            antialias: false,  // 后处理会处理抗锯齿
+            powerPreference: 'high-performance'
+          });
+          
+          this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+          this.renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+          this.renderer.shadowMap.enabled = true;
+          this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+          this.renderer.setClearColor(0x0a0a0a);
+          this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+          this.renderer.toneMappingExposure = 1.0;
+
+          // 场景
+          this.scene = new THREE.Scene();
+          this.scene.background = new THREE.Color(0x0a0a0a);
+
+          // 相机
+          this.camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+          this.camera.position.set(5, 5, 5);
+          this.camera.lookAt(0, 0, 0);
+
+          // 轨道控制
+          this.orbitCtrl = new OrbitControls(this.camera, canvas);
+          this.orbitCtrl.enableDamping = true;
+
+          // 变换控制
+          this.transformCtrl = new TransformControls(this.camera, canvas);
+          this.transformCtrl.addEventListener('dragging-changed', (e) => {
+            this.orbitCtrl.enabled = !e.value;
+          });
+          this.transformCtrl.addEventListener('mouseDown', () => {
+            if (this.selected) {
+              this.beforeTransform = {
+                position: this.selected.position.clone(),
+                rotation: this.selected.rotation.clone(),
+                scale: this.selected.scale.clone()
+              };
+            }
+          });
+          this.transformCtrl.addEventListener('mouseUp', () => {
+            if (this.selected && this.beforeTransform) {
+              this.cmdMgr.execute(new TransformCmd(this.selected, this.beforeTransform));
+              this.beforeTransform = null;
+            }
+          });
+          this.transformCtrl.addEventListener('change', () => this.updateInputs());
+          this.scene.add(this.transformCtrl);
+
+          // 初始化后处理
+          this.ppManager = new PostProcessingManager(this.renderer, this.scene, this.camera);
+
+          // 默认光源
+          const ambient = new THREE.AmbientLight(0x404040, 0.3);
+          ambient.name = '环境光';
+          this.scene.add(ambient);
+
+          const dir = new THREE.DirectionalLight(0xffffff, 1);
+          dir.name = '主光源';
+          dir.position.set(5, 10, 7);
+          dir.castShadow = true;
+          this.scene.add(dir);
+
+          // 网格
+          const grid = new THREE.GridHelper(20, 20, 0x333333, 0x1a1a1a);
+          grid.name = '网格';
+          this.scene.add(grid);
+
+          // 添加示例发光物体
+          this.addEmissive();
+
+          // 事件绑定
+          window.addEventListener('resize', () => this.onResize());
+          canvas.addEventListener('pointerdown', (e) => this.onPointerDown(e));
+          window.addEventListener('keydown', (e) => this.onKeyDown(e));
+          this.setupPropertyListeners();
+          this.setupPostProcessingListeners();
+
+          // 命令监听
+          this.cmdMgr.onChange((state) => {
+            document.getElementById('btn-undo').disabled = !state.canUndo;
+            document.getElementById('btn-redo').disabled = !state.canRedo;
+            document.getElementById('st-history').textContent = `历史: ${state.index + 1}/${state.total}`;
+          });
+
+          // 渲染循环
+          this.animate();
+
+          // 工具栏
+          document.getElementById('tool-translate').onclick = () => this.setTool('translate');
+          document.getElementById('tool-rotate').onclick = () => this.setTool('rotate');
+          document.getElementById('tool-scale').onclick = () => this.setTool('scale');
+          document.getElementById('tool-local').onclick = () => this.toggleSpace();
+
+          // 隐藏加载
+          document.getElementById('loading').classList.add('hidden');
+          document.getElementById('st-render').textContent = 'WebGL2 + PostFX';
+          
+          console.log('编辑器初始化完成，后处理已启用');
+
+        } catch (err) {
+          console.error('初始化失败:', err);
+          document.querySelector('#loading div:last-child').textContent = '初始化失败: ' + err.message;
+        }
+      }
+
+      animate() {
+        requestAnimationFrame(() => this.animate());
+        this.orbitCtrl.update();
+        
+        // 使用后处理渲染
+        if (this.ppManager) {
+          this.ppManager.render();
+        } else {
+          this.renderer.render(this.scene, this.camera);
+        }
+      }
+
+      onResize() {
+        const canvas = document.getElementById('canvas');
+        const parent = canvas.parentElement;
+        this.camera.aspect = parent.clientWidth / parent.clientHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(parent.clientWidth, parent.clientHeight);
+        if (this.ppManager) this.ppManager.setSize(parent.clientWidth, parent.clientHeight);
+      }
+
+      onPointerDown(e) {
+        if (e.button !== 0) return;
+        const canvas = document.getElementById('canvas');
+        const rect = canvas.getBoundingClientRect();
+        this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+        const meshes = this.objects.filter(o => o.isMesh);
+        const intersects = this.raycaster.intersectObjects(meshes);
+        if (intersects.length > 0 && !this.transformCtrl.dragging) {
+          this.select(intersects[0].object);
+        } else if (!this.transformCtrl.dragging) {
+          this.select(null);
+        }
+      }
+
+      onKeyDown(e) {
+        if (e.target.tagName === 'INPUT') return;
+        switch(e.key.toLowerCase()) {
+          case 't': this.setTool('translate'); break;
+          case 'r': this.setTool('rotate'); break;
+          case 's': this.setTool('scale'); break;
+          case 'delete':
+          case 'backspace': this.deleteSelected(); break;
+          case 'z': 
+            if (e.ctrlKey || e.metaKey) e.shiftKey ? this.redo() : this.undo();
+            break;
+          case 'd': 
+            if (e.ctrlKey || e.metaKey) { e.preventDefault(); this.duplicate(); }
+            break;
+          case 'y':
+            if (e.ctrlKey || e.metaKey) this.redo();
+            break;
+        }
+      }
+
+      // 对象操作
+      addCube() {
+        const geo = new THREE.BoxGeometry(1, 1, 1);
+        const mat = new THREE.MeshStandardMaterial({ 
+          color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5),
+          roughness: 0.5, metalness: 0.1
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.name = '立方体 ' + (this.objects.filter(o => o.name?.includes('立方')).length + 1);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.position.set((Math.random()-0.5)*4, 0.5, (Math.random()-0.5)*4);
+        this.cmdMgr.execute(new AddObjectCmd(this, mesh));
+        this.select(mesh);
+      }
+
+      addSphere() {
+        const geo = new THREE.SphereGeometry(0.5, 32, 16);
+        const mat = new THREE.MeshStandardMaterial({ 
+          color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5),
+          roughness: 0.3, metalness: 0.2
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.name = '球体 ' + (this.objects.filter(o => o.name?.includes('球')).length + 1);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.position.set((Math.random()-0.5)*4, 0.5, (Math.random()-0.5)*4);
+        this.cmdMgr.execute(new AddObjectCmd(this, mesh));
+        this.select(mesh);
+      }
+
+      addEmissive() {
+        const geo = new THREE.BoxGeometry(1, 1, 1);
+        const mat = new THREE.MeshStandardMaterial({ 
+          color: new THREE.Color().setHSL(Math.random() * 0.1 + 0.5, 0.8, 0.5),
+          emissive: new THREE.Color().setHSL(Math.random() * 0.1 + 0.05, 1, 0.5),
+          emissiveIntensity: 2,
+          roughness: 0.2,
+          metalness: 0.1
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.name = '发光体 ' + (this.objects.filter(o => o.name?.includes('发光')).length + 1);
+        mesh.position.set((Math.random()-0.5)*3, 1, (Math.random()-0.5)*3);
+        this.cmdMgr.execute(new AddObjectCmd(this, mesh));
+        this.select(mesh);
+      }
+
+      addLight() {
+        const light = new THREE.PointLight(0xffaa00, 2, 10);
+        light.name = '点光源 ' + (this.objects.filter(o => o.name?.includes('光源')).length + 1);
+        light.position.set(2, 3, 2);
+        const helper = new THREE.Mesh(
+          new THREE.SphereGeometry(0.1),
+          new THREE.MeshBasicMaterial({ color: 0xffaa00 })
+        );
+        helper.name = '可视化';
+        light.add(helper);
+        this.cmdMgr.execute(new AddObjectCmd(this, light));
+        this.select(light);
+      }
+
+      deleteSelected() {
+        if (this.selected) this.cmdMgr.execute(new RemoveObjectCmd(this, this.selected));
+      }
+
+      duplicate() {
+        if (!this.selected || !this.selected.isMesh) return;
+        const clone = this.selected.clone();
+        clone.name = this.selected.name + ' 副本';
+        clone.position.x += 1;
+        clone.material = this.selected.material.clone();
+        this.cmdMgr.execute(new AddObjectCmd(this, clone));
+        this.select(clone);
+      }
+
+      // 选择
+      select(obj) {
+        this.selected = obj;
+        if (obj) {
+          this.transformCtrl.attach(obj);
+          this.transformCtrl.visible = true;
+        } else {
+          this.transformCtrl.detach();
+          this.transformCtrl.visible = false;
+        }
+        this.updateInputs();
+        this.updateTree();
+        this.updateMaterialPanel();
+      }
+
+      // 工具
+      setTool(mode) {
+        this.transformCtrl.setMode(mode);
+        document.querySelectorAll('#viewport-tools button').forEach(b => b.classList.remove('active'));
+        document.getElementById('tool-' + mode).classList.add('active');
+      }
+
+      toggleSpace() {
+        const current = this.transformCtrl.space;
+        const next = current === 'local' ? 'world' : 'local';
+        this.transformCtrl.setSpace(next);
+        document.getElementById('tool-local').textContent = next === 'local' ? '⊕' : '⊙';
+      }
+
+      // 撤销/重做
+      undo() { this.cmdMgr.undo(); this.updateInputs(); }
+      redo() { this.cmdMgr.redo(); this.updateInputs(); }
+
+      // 场景操作
+      newScene() {
+        if (!confirm('确定要新建场景？未保存的更改将丢失。')) return;
+        [...this.objects].forEach(obj => this.scene.remove(obj));
+        this.objects = [];
+        this.select(null);
+        this.cmdMgr.clear();
+        this.addEmissive();
+      }
+
+      saveScene() { /* TODO */ }
+      loadScene() { /* TODO */ }
+      importGLTF() { /* TODO */ }
+      exportScene() { /* TODO */ }
+
+      // UI 更新
+      updateTree() {
+        const tree = document.getElementById('scene-tree');
+        if (this.objects.length === 0) {
+          tree.innerHTML = '<div class="empty-state">暂无对象</div>';
+          return;
+        }
+        let html = '';
+        this.objects.forEach((obj, i) => {
+          const selected = obj === this.selected ? 'selected' : '';
+          const icon = obj.isMesh ? '🎲' : '💡';
+          html += `
+            <div class="tree-item ${selected}" onclick="editor.selectByIndex(${i})">
+              <span class="icon">${icon}</span>
+              <span>${obj.name}</span>
+              <span class="actions">
+                <button onclick="event.stopPropagation(); editor.deleteByIndex(${i})">🗑</button>
+              </span>
+            </div>
+          `;
+        });
+        tree.innerHTML = html;
+      }
+
+      selectByIndex(i) { this.select(this.objects[i]); }
+      deleteByIndex(i) { this.cmdMgr.execute(new RemoveObjectCmd(this, this.objects[i])); }
+
+      updateStatus() {
+        const count = this.objects.filter(o => o.isMesh).length;
+        document.getElementById('st-obj').textContent = count + ' 个对象';
+      }
+
+      updateInputs() {
+        if (!this.selected) {
+          ['pos-x','pos-y','pos-z','rot-x','rot-y','rot-z','scale-x','scale-y','scale-z']
+            .forEach(id => document.getElementById(id).value = id.startsWith('scale') ? 1 : 0);
+          return;
+        }
+        const set = (id, v) => document.getElementById(id).value = v.toFixed(2);
+        set('pos-x', this.selected.position.x);
+        set('pos-y', this.selected.position.y);
+        set('pos-z', this.selected.position.z);
+        set('rot-x', THREE.MathUtils.radToDeg(this.selected.rotation.x));
+        set('rot-y', THREE.MathUtils.radToDeg(this.selected.rotation.y));
+        set('rot-z', THREE.MathUtils.radToDeg(this.selected.rotation.z));
+        set('scale-x', this.selected.scale.x);
+        set('scale-y', this.selected.scale.y);
+        set('scale-z', this.selected.scale.z);
+      }
+
+      setupPropertyListeners() {
+        const transformIds = ['pos-x','pos-y','pos-z','rot-x','rot-y','rot-z','scale-x','scale-y','scale-z'];
+        transformIds.forEach(id => {
+          document.getElementById(id).addEventListener('change', () => this.applyTransform());
+        });
+        
+        document.getElementById('mat-color').addEventListener('input', (e) => this.applyMaterial('color', e.target.value));
+        document.getElementById('mat-emissive').addEventListener('input', (e) => this.applyMaterial('emissive', e.target.value));
+        
+        ['roughness','metalness','opacity'].forEach(prop => {
+          document.getElementById('mat-' + prop).addEventListener('input', (e) => {
+            document.getElementById('val-' + prop).textContent = e.target.value;
+            this.applyMaterial(prop, parseFloat(e.target.value));
+          });
+        });
+        
+        document.getElementById('mat-wireframe').addEventListener('change', (e) => this.applyMaterial('wireframe', e.target.checked));
+      }
+
+      setupPostProcessingListeners() {
+        // Bloom 控制
+        document.getElementById('pp-bloom-enable').addEventListener('change', (e) => {
+          if (this.ppManager) this.ppManager.setBloomEnabled(e.target.checked);
+          this.updateEffectStatus();
+        });
+        document.getElementById('pp-bloom-strength').addEventListener('input', (e) => {
+          document.getElementById('val-bloom-strength').textContent = e.target.value;
+          if (this.ppManager) this.ppManager.setBloomStrength(parseFloat(e.target.value));
+        });
+        document.getElementById('pp-bloom-radius').addEventListener('input', (e) => {
+          document.getElementById('val-bloom-radius').textContent = e.target.value;
+          if (this.ppManager) this.ppManager.setBloomRadius(parseFloat(e.target.value));
+        });
+        document.getElementById('pp-bloom-threshold').addEventListener('input', (e) => {
+          document.getElementById('val-bloom-threshold').textContent = e.target.value;
+          if (this.ppManager) this.ppManager.setBloomThreshold(parseFloat(e.target.value));
+        });
+        
+        // 全局开关
+        document.getElementById('pp-enable').addEventListener('change', (e) => {
+          if (this.ppManager) this.ppManager.enabled = e.target.checked;
+          this.updateEffectStatus();
+        });
+      }
+
+      updateEffectStatus() {
+        const bloomEnabled = document.getElementById('pp-bloom-enable').checked;
+        const ppEnabled = document.getElementById('pp-enable').checked;
+        const status = ppEnabled && bloomEnabled ? '✨ Bloom' : '⏹️ 无效果';
+        document.getElementById('st-effects').textContent = status;
+      }
+
+      applyTransform() {
+        if (!this.selected) return;
+        const get = (id) => parseFloat(document.getElementById(id).value) || 0;
+        this.selected.position.set(get('pos-x'), get('pos-y'), get('pos-z'));
+        this.selected.rotation.set(
+          THREE.MathUtils.degToRad(get('rot-x')),
+          THREE.MathUtils.degToRad(get('rot-y')),
+          THREE.MathUtils.degToRad(get('rot-z'))
+        );
+        this.selected.scale.set(get('scale-x'), get('scale-y'), get('scale-z'));
+      }
+
+      applyMaterial(prop, value) {
+        if (!this.selected || !this.selected.material) return;
+        const mat = this.selected.material;
+        if (prop === 'color' || prop === 'emissive') {
+          mat[prop].set(value);
+        } else {
+          mat[prop] = value;
+        }
+        mat.needsUpdate = true;
+      }
+
+      updateMaterialPanel() {
+        const hasMat = this.selected && this.selected.material;
+        if (!hasMat) return;
+        
+        const mat = this.selected.material;
+        document.getElementById('mat-color').value = '#' + mat.color.getHexString();
+        if (mat.emissive) {
+          document.getElementById('mat-emissive').value = '#' + mat.emissive.getHexString();
+        }
+        
+        ['roughness','metalness','opacity'].forEach(prop => {
+          if (prop in mat) {
+            document.getElementById('mat-' + prop).value = mat[prop];
+            document.getElementById('val-' + prop).textContent = mat[prop];
+          }
+        });
+        
+        if ('wireframe' in mat) {
+          document.getElementById('mat-wireframe').checked = mat.wireframe;
+        }
+      }
+    }
+
+    // 启动
+    window.editor = new Editor();
+    
+    // FPS 计数
+    let frames = 0, last = performance.now();
+    setInterval(() => {
+      const now = performance.now();
+      document.getElementById('st-fps').textContent = Math.round(frames * 1000 / (now - last)) + ' FPS';
+      frames = 0;
+      last = now;
+    }, 1000);
+    
+    const origAnimate = window.editor.animate;
+    window.editor.animate = function() {
+      frames++;
+      origAnimate.call(this);
+    };
+  </script>
+</body>
+</html>

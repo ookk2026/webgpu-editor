@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebGPU Editor + Physics + Particles</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; font-family: system-ui, sans-serif; background: #0a0a0a; }
+    #app { display: flex; flex-direction: column; width: 100%; height: 100%; }
+    
+    /* 工具栏 */
+    #toolbar { height: 48px; background: linear-gradient(180deg, #2a2a2a 0%, #222 100%); border-bottom: 1px solid #333; display: flex; align-items: center; padding: 0 16px; gap: 8px; }
+    #toolbar button { padding: 7px 14px; background: #383838; color: #e0e0e0; border: 1px solid #444; border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.15s; }
+    #toolbar button:hover { background: #444; }
+    #toolbar button.primary { background: linear-gradient(180deg, #0e8add 0%, #0a6cb5 100%); border-color: #0e8add; color: white; }
+    #toolbar button:disabled { opacity: 0.4; cursor: not-allowed; }
+    #toolbar .separator { width: 1px; height: 24px; background: #3a3a3a; margin: 0 4px; }
+    
+    /* 主布局 */
+    #main { flex: 1; display: flex; overflow: hidden; }
+    #left { width: 280px; background: #1a1a1a; border-right: 1px solid #2a2a2a; display: flex; flex-direction: column; }
+    .panel-header { height: 36px; background: linear-gradient(180deg, #252525 0%, #1f1f1f 100%); display: flex; align-items: center; padding: 0 14px; font-size: 12px; font-weight: 600; color: #ccc; border-bottom: 1px solid #2a2a2a; }
+    .panel-content { flex: 1; overflow: auto; padding: 10px; }
+    
+    /* 粒子预设 */
+    .particle-preset { padding: 10px; margin-bottom: 8px; background: #222; border: 1px solid #2a2a2a; border-radius: 6px; cursor: pointer; transition: all 0.15s; }
+    .particle-preset:hover { background: #2a2a2a; border-color: #0e8add; }
+    .particle-preset-name { font-size: 12px; color: #ddd; font-weight: 500; }
+    .particle-preset-desc { font-size: 10px; color: #666; margin-top: 3px; }
+    
+    /* 视口 */
+    #center { flex: 1; position: relative; background: #050505; }
+    #canvas { width: 100%; height: 100%; display: block; }
+    #viewport-tools { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; padding: 6px; background: rgba(30, 30, 30, 0.95); border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); }
+    #viewport-tools button { width: 38px; height: 38px; background: transparent; border: none; color: #888; cursor: pointer; border-radius: 8px; font-size: 17px; }
+    #viewport-tools button:hover { color: #fff; }
+    #viewport-tools button.active { background: #0e8add; color: white; }
+    
+    /* 右侧面板 */
+    #right { width: 320px; background: #1a1a1a; border-left: 1px solid #2a2a2a; display: flex; flex-direction: column; overflow-y: auto; }
+    
+    /* 标签页 */
+    .tabs { display: flex; border-bottom: 1px solid #2a2a2a; }
+    .tab { flex: 1; padding: 10px; text-align: center; font-size: 11px; color: #666; cursor: pointer; border-bottom: 2px solid transparent; }
+    .tab.active { color: #0e8add; border-bottom-color: #0e8add; background: rgba(14, 138, 221, 0.05); }
+    
+    /* 属性组 */
+    .prop-group { border-bottom: 1px solid #252525; }
+    .prop-group-header { height: 34px; background: linear-gradient(180deg, #222 0%, #1e1e1e 100%); display: flex; align-items: center; padding: 0 16px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: #888; cursor: pointer; }
+    .prop-group-content { padding: 16px; }
+    .prop-row { display: flex; align-items: center; margin-bottom: 12px; gap: 10px; }
+    .prop-label { width: 90px; color: #777; font-size: 11px; }
+    .prop-input { flex: 1; display: flex; gap: 6px; }
+    .prop-input input, .prop-input select { flex: 1; padding: 7px 10px; background: #252525; border: 1px solid #333; border-radius: 4px; color: #ccc; font-size: 11px; }
+    .prop-input input:focus { outline: none; border-color: #0e8add; }
+    .prop-input input[type="range"] { padding: 0; }
+    .prop-value { min-width: 36px; text-align: right; font-size: 10px; color: #555; }
+    
+    .checkbox-row { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+    .checkbox-row input { width: 16px; height: 16px; accent-color: #0e8add; }
+    
+    /* 状态栏 */
+    #statusbar { height: 28px; background: linear-gradient(180deg, #0a7acc 0%, #0866a8 100%); display: flex; align-items: center; padding: 0 16px; font-size: 11px; color: white; }
+    #statusbar span { margin-right: 24px; }
+    
+    #loading { position: fixed; inset: 0; background: #0a0a0a; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #555; z-index: 1000; }
+    #loading.hidden { display: none; }
+    .spinner { width: 50px; height: 50px; border: 3px solid #1a1a1a; border-top-color: #0e8add; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    .btn-row { display: flex; gap: 8px; margin-top: 14px; }
+    .btn-row button { flex: 1; padding: 10px; background: #0e8add; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 12px; }
+    .btn-row button:hover { background: #1196ee; }
+    .btn-row button.secondary { background: #333; }
+    .btn-row button.danger { background: #dc3545; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 工具栏 -->
+    <div id="toolbar">
+      <button onclick="editor.newScene()">🗑 新建</button>
+      <div class="separator"></div>
+      <button id="btn-undo" onclick="editor.undo()" disabled>↶ 撤销</button>
+      <button id="btn-redo" onclick="editor.redo()" disabled>↷ 重做</button>
+      <div class="separator"></div>
+      <button onclick="editor.addCube()" class="primary">⧉ 立方体</button>
+      <button onclick="editor.addSphere()" class="primary">○ 球体</button>
+      <button onclick="editor.addPhysicsBox()" class="primary">📦 物理盒子</button>
+      <button onclick="editor.addPhysicsBall()" class="primary">⚽ 物理球</button>
+      <div style="flex:1"></div>
+      <button id="btn-physics" onclick="editor.togglePhysics()">⏸️ 暂停物理</button>
+    </div>
+
+    <!-- 主区域 -->
+    <div id="main">
+      <!-- 左侧面板 -->
+      <div id="left">
+        <div class="tabs">
+          <div class="tab active" onclick="switchTab('particles')">粒子</div>
+          <div class="tab" onclick="switchTab('physics')">物理</div>
+        </div>
+        <div class="panel-content" id="left-panel">
+          <!-- 粒子预设 -->
+          <div id="particles-panel">
+            <div class="panel-header">🎆 粒子预设</div>
+            <div style="padding: 10px;">
+              <div class="particle-preset" onclick="editor.addParticleSystem('fire')">
+                <div class="particle-preset-name">🔥 火焰 (Fire)</div>
+                <div class="particle-preset-desc">燃烧的火焰效果，适合篝火、火炬</div>
+              </div>
+              <div class="particle-preset" onclick="editor.addParticleSystem('smoke')">
+                <div class="particle-preset-name">💨 烟雾 (Smoke)</div>
+                <div class="particle-preset-desc">升腾的烟雾，适合烟囱、火灾</div>
+              </div>
+              <div class="particle-preset" onclick="editor.addParticleSystem('explosion')">
+                <div class="particle-preset-name">💥 爆炸 (Explosion)</div>
+                <div class="particle-preset-desc">一次性爆炸效果</div>
+              </div>
+              <div class="particle-preset" onclick="editor.addParticleSystem('magic')">
+                <div class="particle-preset-name">✨ 魔法 (Magic)</div>
+                <div class="particle-preset-desc">梦幻魔法粒子</div>
+              </div>
+              <div class="particle-preset" onclick="editor.addParticleSystem('spark')">
+                <div class="particle-preset-name">⚡ 火花 (Sparks)</div>
+                <div class="particle-preset-desc">焊接/碰撞火花效果</div>
+              </div>
+              <div class="particle-preset" onclick="editor.addParticleSystem('rain')">
+                <div class="particle-preset-name">🌧️ 雨滴 (Rain)</div>
+                <div class="particle-preset-desc">下雨效果</div>
+              </div>
+            </div>
+            
+            <div class="panel-header">📊 粒子控制</div>
+            <div style="padding: 10px;">
+              <div class="prop-row">
+                <label class="checkbox-row">
+                  <input id="particle-play" type="checkbox" checked onchange="editor.toggleParticles()">
+                  <span>播放粒子</span>
+                </label>
+              </div>
+              <div class="btn-row">
+                <button onclick="editor.burstParticles()">💥 爆发</button>
+                <button class="danger" onclick="editor.clearParticles()">🗑 清除</button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 物理控制 -->
+          <div id="physics-panel" style="display:none;">
+            <div class="panel-header">⚙️ 物理设置</div>
+            <div style="padding: 10px;">
+              <div class="prop-row">
+                <span class="prop-label">重力 Y</span>
+                <div class="prop-input">
+                  <input id="gravity-y" type="range" min="-20" max="0" step="0.5" value="-9.8" oninput="editor.updateGravity()">
+                  <span class="prop-value" id="val-gravity">-9.8</span>
+                </div>
+              </div>
+              <div class="prop-row">
+                <span class="prop-label">时间缩放</span>
+                <div class="prop-input">
+                  <input id="time-scale" type="range" min="0" max="2" step="0.1" value="1" oninput="editor.updateTimeScale()">
+                  <span class="prop-value" id="val-timescale">1.0</span>
+                </div>
+              </div>
+              <div class="btn-row">
+                <button onclick="editor.resetPhysics()">↺ 重置物理</button>
+              </div>
+            </div>
+            
+            <div class="panel-header">🎯 施加力</div>
+            <div style="padding: 10px;">
+              <div class="btn-row">
+                <button onclick="editor.applyExplosion()">💥 爆炸冲击</button>
+              </div>
+              <div class="btn-row">
+                <button onclick="editor.applyUpForce()">⬆️ 向上推力</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 中间视口 -->
+      <div id="center">
+        <canvas id="canvas"></canvas>
+        <div id="viewport-tools">
+          <button id="tool-translate" class="active">↔</button>
+          <button id="tool-rotate">↻</button>
+          <button id="tool-scale">⤢</button>
+        </div>
+      </div>
+
+      <!-- 右侧面板 -->
+      <div id="right">
+        <div class="tabs">
+          <div class="tab active">属性</div>
+        </div>
+        
+        <!-- 粒子属性 -->
+        <div class="prop-group">
+          <div class="prop-group-header">🎆 粒子属性</div>
+          <div class="prop-group-content">
+            <div class="prop-row">
+              <span class="prop-label">发射率</span>
+              <div class="prop-input">
+                <input id="emit-rate" type="range" min="0" max="500" step="10" value="100" oninput="editor.updateParticleConfig('emissionRate', this.value)">
+                <span class="prop-value" id="val-emit">100</span>
+              </div>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">粒子数</span>
+              <div class="prop-input">
+                <input id="max-particles" type="range" min="100" max="5000" step="100" value="1000" oninput="editor.updateParticleConfig('maxParticles', this.value)">
+                <span class="prop-value" id="val-maxp">1000</span>
+              </div>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">生命周期</span>
+              <div class="prop-input">
+                <input id="min-life" type="number" step="0.1" value="1" placeholder="最小" onchange="editor.updateParticleConfig('minLife', this.value)">
+                <input id="max-life" type="number" step="0.1" value="3" placeholder="最大" onchange="editor.updateParticleConfig('maxLife', this.value)">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 物理属性 -->
+        <div class="prop-group">
+          <div class="prop-group-header">⚽ 物理属性</div>
+          <div class="prop-group-content">
+            <div class="prop-row">
+              <span class="prop-label">质量</span>
+              <div class="prop-input">
+                <input id="phys-mass" type="range" min="0" max="10" step="0.5" value="1" oninput="editor.updatePhysicsConfig('mass', this.value)">
+                <span class="prop-value" id="val-mass">1</span>
+              </div>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">弹性</span>
+              <div class="prop-input">
+                <input id="phys-rest" type="range" min="0" max="1" step="0.1" value="0.3" oninput="editor.updatePhysicsConfig('restitution', this.value)">
+                <span class="prop-value" id="val-rest">0.3</span>
+              </div>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">摩擦力</span>
+              <div class="prop-input">
+                <input id="phys-fric" type="range" min="0" max="1" step="0.1" value="0.3" oninput="editor.updatePhysicsConfig('friction', this.value)">
+                <span class="prop-value" id="val-fric">0.3</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 统计信息 -->
+        <div class="prop-group">
+          <div class="prop-group-header">📊 统计</div>
+          <div class="prop-group-content">
+            <div class="prop-row">
+              <span class="prop-label">粒子数</span>
+              <span id="stat-particles" style="color:#0e8add;font-weight:600;">0</span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">刚体数</span>
+              <span id="stat-bodies" style="color:#0e8add;font-weight:600;">0</span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">FPS</span>
+              <span id="stat-fps" style="color:#0e8add;font-weight:600;">--</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 状态栏 -->
+    <div id="statusbar">
+      <span id="st-mode">🟢 就绪</span>
+      <span id="st-obj">0 对象</span>
+      <span id="st-physics">⚙️ 物理运行中</span>
+      <span id="st-fps">-- FPS</span>
+    </div>
+  </div>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <div>初始化编辑器、物理引擎与粒子系统...</div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { TransformControls } from 'three/addons/controls/TransformControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+    import * as CANNON from 'cannon-es';
+
+    // ========== 粒子系统 ==========
+    class ParticleSystem {
+      constructor(scene, config = {}) {
+        this.scene = scene;
+        this.config = {
+          maxParticles: config.maxParticles || 1000,
+          emissionRate: config.emissionRate || 100,
+          minLife: config.minLife || 1,
+          maxLife: config.maxLife || 3,
+          startSize: config.startSize || 0.5,
+          endSize: config.endSize || 0.1,
+          startColor: config.startColor || new THREE.Color(1, 1, 1),
+          endColor: config.endColor || new THREE.Color(1, 1, 1),
+          gravity: config.gravity || new THREE.Vector3(0, -9.8, 0),
+          velocity: config.velocity || new THREE.Vector3(0, 2, 0),
+          velocityVar: config.velocityVar || new THREE.Vector3(1, 0.5, 1),
+          blending: config.blending || 'additive',
+          ...config
+        };
+        
+        this.particles = [];
+        this.geometry = new THREE.BufferGeometry();
+        this.positions = new Float32Array(this.config.maxParticles * 3);
+        this.colors = new Float32Array(this.config.maxParticles * 3);
+        this.sizes = new Float32Array(this.config.maxParticles);
+        this.opacities = new Float32Array(this.config.maxParticles);
+        
+        this.geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+        this.geometry.setAttribute('color', new THREE.BufferAttribute(this.colors, 3));
+        this.geometry.setAttribute('size', new THREE.BufferAttribute(this.sizes, 1));
+        this.geometry.setAttribute('opacity', new THREE.BufferAttribute(this.opacities, 1));
+        
+        const material = new THREE.ShaderMaterial({
+          uniforms: { pointTexture: { value: null } },
+          vertexShader: `
+            attribute float size;
+            attribute float opacity;
+            varying vec3 vColor;
+            varying float vOpacity;
+            void main() {
+              vColor = color;
+              vOpacity = opacity;
+              vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+              gl_Position = projectionMatrix * mvPosition;
+              gl_PointSize = size * (300.0 / -mvPosition.z);
+            }
+          `,
+          fragmentShader: `
+            varying vec3 vColor;
+            varying float vOpacity;
+            void main() {
+              vec2 coord = gl_PointCoord - vec2(0.5);
+              float dist = length(coord);
+              if (dist > 0.5) discard;
+              float alpha = 1.0 - smoothstep(0.3, 0.5, dist);
+              gl_FragColor = vec4(vColor, vOpacity * alpha);
+            }
+          `,
+          transparent: true,
+          depthWrite: false,
+          blending: this.config.blending === 'additive' ? THREE.AdditiveBlending : THREE.NormalBlending,
+          vertexColors: true
+        });
+        
+        this.mesh = new THREE.Points(this.geometry, material);
+        this.scene.add(this.mesh);
+        
+        this.emissionAccumulator = 0;
+        this.isPlaying = true;
+        this.particleCount = 0;
+      }
+
+      update(deltaTime) {
+        if (!this.isPlaying) return;
+        
+        // 发射新粒子
+        this.emissionAccumulator += this.config.emissionRate * deltaTime;
+        const emitCount = Math.floor(this.emissionAccumulator);
+        this.emissionAccumulator -= emitCount;
+        
+        for (let i = 0; i < emitCount; i++) {
+          if (this.particles.length >= this.config.maxParticles) break;
+          this.spawnParticle();
+        }
+        
+        // 更新现有粒子
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+          const p = this.particles[i];
+          p.life -= deltaTime;
+          
+          if (p.life <= 0) {
+            this.particles.splice(i, 1);
+            continue;
+          }
+          
+          const ratio = p.life / p.maxLife;
+          p.velocity.addScaledVector(this.config.gravity, deltaTime);
+          p.position.addScaledVector(p.velocity, deltaTime);
+          p.size = THREE.MathUtils.lerp(this.config.endSize, this.config.startSize, ratio);
+          p.color.lerpColors(this.config.endColor, this.config.startColor, ratio);
+        }
+        
+        this.updateGPU();
+        this.particleCount = this.particles.length;
+      }
+
+      spawnParticle() {
+        const life = THREE.MathUtils.lerp(this.config.minLife, this.config.maxLife, Math.random());
+        const velocity = this.config.velocity.clone();
+        velocity.x += (Math.random() - 0.5) * this.config.velocityVar.x * 2;
+        velocity.y += (Math.random() - 0.5) * this.config.velocityVar.y * 2;
+        velocity.z += (Math.random() - 0.5) * this.config.velocityVar.z * 2;
+        
+        this.particles.push({
+          position: this.mesh.position.clone(),
+          velocity: velocity,
+          life: life,
+          maxLife: life,
+          size: this.config.startSize,
+          color: this.config.startColor.clone(),
+          opacity: 1
+        });
+      }
+
+      updateGPU() {
+        for (let i = 0; i < this.particles.length; i++) {
+          const p = this.particles[i];
+          this.positions[i * 3] = p.position.x;
+          this.positions[i * 3 + 1] = p.position.y;
+          this.positions[i * 3 + 2] = p.position.z;
+          this.colors[i * 3] = p.color.r;
+          this.colors[i * 3 + 1] = p.color.g;
+          this.colors[i * 3 + 2] = p.color.b;
+          this.sizes[i] = p.size;
+          this.opacities[i] = p.opacity;
+        }
+        
+        // 隐藏未使用的粒子
+        for (let i = this.particles.length; i < this.config.maxParticles; i++) {
+          this.sizes[i] = 0;
+        }
+        
+        this.geometry.attributes.position.needsUpdate = true;
+        this.geometry.attributes.color.needsUpdate = true;
+        this.geometry.attributes.size.needsUpdate = true;
+        this.geometry.attributes.opacity.needsUpdate = true;
+      }
+
+      setPosition(pos) {
+        this.mesh.position.copy(pos);
+      }
+
+      burst(count) {
+        for (let i = 0; i < count && i < this.config.maxParticles; i++) {
+          this.spawnParticle();
+        }
+      }
+
+      clear() {
+        this.particles = [];
+        this.updateGPU();
+      }
+
+      play() { this.isPlaying = true; }
+      pause() { this.isPlaying = false; }
+
+      updateConfig(key, value) {
+        if (key === 'emissionRate') this.config.emissionRate = parseInt(value);
+        if (key === 'maxParticles') this.config.maxParticles = parseInt(value);
+        if (key === 'minLife') this.config.minLife = parseFloat(value);
+        if (key === 'maxLife') this.config.maxLife = parseFloat(value);
+      }
+
+      dispose() {
+        this.scene.remove(this.mesh);
+        this.geometry.dispose();
+        this.mesh.material.dispose();
+      }
+    }
+
+    // 粒子预设
+    const ParticlePresets = {
+      fire: {
+        name: 'Fire',
+        maxParticles: 500,
+        emissionRate: 60,
+        minLife: 0.5, maxLife: 1.5,
+        startSize: 0.8, endSize: 0.1,
+        startColor: new THREE.Color(1, 0.5, 0),
+        endColor: new THREE.Color(1, 0.1, 0),
+        velocity: new THREE.Vector3(0, 2, 0),
+        velocityVar: new THREE.Vector3(0.5, 0.5, 0.5),
+        gravity: new THREE.Vector3(0, 3, 0),
+        blending: 'additive'
+      },
+      smoke: {
+        name: 'Smoke',
+        maxParticles: 300,
+        emissionRate: 30,
+        minLife: 2, maxLife: 4,
+        startSize: 0.5, endSize: 2,
+        startColor: new THREE.Color(0.5, 0.5, 0.5),
+        endColor: new THREE.Color(0.3, 0.3, 0.3),
+        velocity: new THREE.Vector3(0, 1, 0),
+        velocityVar: new THREE.Vector3(0.3, 0.5, 0.3),
+        gravity: new THREE.Vector3(0, 0.5, 0),
+        blending: 'normal'
+      },
+      explosion: {
+        name: 'Explosion',
+        maxParticles: 200,
+        emissionRate: 0,
+        minLife: 0.3, maxLife: 0.8,
+        startSize: 1.5, endSize: 0.2,
+        startColor: new THREE.Color(1, 0.9, 0.5),
+        endColor: new THREE.Color(1, 0.2, 0),
+        velocity: new THREE.Vector3(0, 5, 0),
+        velocityVar: new THREE.Vector3(8, 8, 8),
+        gravity: new THREE.Vector3(0, -5, 0),
+        blending: 'additive'
+      },
+      magic: {
+        name: 'Magic',
+        maxParticles: 300,
+        emissionRate: 40,
+        minLife: 1, maxLife: 2,
+        startSize: 0.3, endSize: 0,
+        startColor: new THREE.Color(0.5, 0.8, 1),
+        endColor: new THREE.Color(1, 0.5, 0.8),
+        velocity: new THREE.Vector3(0, 1, 0),
+        velocityVar: new THREE.Vector3(1, 2, 1),
+        gravity: new THREE.Vector3(0, 2, 0),
+        blending: 'additive'
+      },
+      spark: {
+        name: 'Sparks',
+        maxParticles: 100,
+        emissionRate: 20,
+        minLife: 0.2, maxLife: 0.5,
+        startSize: 0.1, endSize: 0.02,
+        startColor: new THREE.Color(1, 1, 0.8),
+        endColor: new THREE.Color(1, 0.5, 0),
+        velocity: new THREE.Vector3(0, 3, 0),
+        velocityVar: new THREE.Vector3(3, 5, 3),
+        gravity: new THREE.Vector3(0, -9.8, 0),
+        blending: 'additive'
+      },
+      rain: {
+        name: 'Rain',
+        maxParticles: 2000,
+        emissionRate: 500,
+        minLife: 1, maxLife: 2,
+        startSize: 0.05, endSize: 0.05,
+        startColor: new THREE.Color(0.7, 0.8, 1),
+        endColor: new THREE.Color(0.7, 0.8, 1),
+        velocity: new THREE.Vector3(0, -10, 0),
+        velocityVar: new THREE.Vector3(2, 5, 2),
+        gravity: new THREE.Vector3(0, -9.8, 0),
+        blending: 'normal'
+      }
+    };
+
+    // ========== 物理系统 ==========
+    class PhysicsManager {
+      constructor(scene) {
+        this.scene = scene;
+        this.world = new CANNON.World({
+          gravity: new CANNON.Vec3(0, -9.82, 0)
+        });
+        
+        // 默认材质
+        const defaultMaterial = new CANNON.Material('default');
+        const defaultContact = new CANNON.ContactMaterial(defaultMaterial, defaultMaterial, {
+          friction: 0.3,
+          restitution: 0.3
+        });
+        this.world.addContactMaterial(defaultContact);
+        
+        this.bodies = [];
+        this.paused = false;
+        this.timeScale = 1;
+      }
+
+      addBox(mesh, mass = 1) {
+        const shape = new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5));
+        const body = new CANNON.Body({
+          mass: mass,
+          shape: shape,
+          position: new CANNON.Vec3(mesh.position.x, mesh.position.y, mesh.position.z)
+        });
+        this.world.addBody(body);
+        this.bodies.push({ mesh, body });
+        return body;
+      }
+
+      addSphere(mesh, radius = 0.5, mass = 1) {
+        const shape = new CANNON.Sphere(radius);
+        const body = new CANNON.Body({
+          mass: mass,
+          shape: shape,
+          position: new CANNON.Vec3(mesh.position.x, mesh.position.y, mesh.position.z)
+        });
+        this.world.addBody(body);
+        this.bodies.push({ mesh, body });
+        return body;
+      }
+
+      addGround() {
+        const shape = new CANNON.Plane();
+        const body = new CANNON.Body({ mass: 0, shape: shape });
+        body.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+        this.world.addBody(body);
+        return body;
+      }
+
+      update(deltaTime) {
+        if (this.paused) return;
+        
+        const dt = deltaTime * this.timeScale;
+        this.world.step(1/60, dt, 3);
+        
+        // 同步位置
+        this.bodies.forEach(({ mesh, body }) => {
+          mesh.position.copy(body.position);
+          mesh.quaternion.copy(body.quaternion);
+        });
+      }
+
+      applyExplosion(center, force, radius) {
+        this.bodies.forEach(({ body }) => {
+          const dist = body.position.distanceTo(new CANNON.Vec3(center.x, center.y, center.z));
+          if (dist < radius) {
+            const dir = body.position.vsub(new CANNON.Vec3(center.x, center.y, center.z));
+            dir.normalize();
+            const f = force * (1 - dist / radius);
+            body.applyImpulse(dir.scale(f), body.position);
+          }
+        });
+      }
+
+      applyUpForce(force) {
+        this.bodies.forEach(({ body }) => {
+          if (body.mass > 0) {
+            body.applyImpulse(new CANNON.Vec3(0, force, 0), body.position);
+          }
+        });
+      }
+
+      togglePause() {
+        this.paused = !this.paused;
+        return this.paused;
+      }
+
+      setGravity(y) {
+        this.world.gravity.set(0, y, 0);
+      }
+
+      setTimeScale(scale) {
+        this.timeScale = scale;
+      }
+
+      clear() {
+        this.bodies.forEach(({ body }) => {
+          this.world.removeBody(body);
+        });
+        this.bodies = [];
+      }
+
+      getBodyCount() {
+        return this.bodies.length;
+      }
+    }
+
+    // ========== 主编辑器 ==========
+    class Editor {
+      constructor() {
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+        this.composer = null;
+        this.controls = null;
+        this.physics = null;
+        this.particleSystems = [];
+        this.objects = [];
+        this.isPhysicsPaused = false;
+        
+        this.init();
+      }
+
+      async init() {
+        const canvas = document.getElementById('canvas');
+        
+        // 渲染器
+        this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+        this.renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+        // 场景
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x0a0a0a);
+
+        // 相机
+        this.camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+        this.camera.position.set(8, 6, 8);
+        this.camera.lookAt(0, 0, 0);
+
+        // 控制器
+        this.controls = new OrbitControls(this.camera, canvas);
+        this.controls.enableDamping = true;
+
+        // 后处理
+        this.composer = new EffectComposer(this.renderer);
+        this.composer.addPass(new RenderPass(this.scene, this.camera));
+        const bloom = new UnrealBloomPass(new THREE.Vector2(canvas.clientWidth, canvas.clientHeight), 0.5, 0.4, 0.85);
+        this.composer.addPass(bloom);
+        this.composer.addPass(new OutputPass());
+
+        // 物理
+        this.physics = new PhysicsManager(this.scene);
+        this.physics.addGround();
+
+        // 灯光
+        const ambient = new THREE.AmbientLight(0x404040, 0.5);
+        this.scene.add(ambient);
+        
+        const dir = new THREE.DirectionalLight(0xffffff, 1);
+        dir.position.set(5, 10, 5);
+        dir.castShadow = true;
+        this.scene.add(dir);
+
+        // 网格
+        const grid = new THREE.GridHelper(20, 20, 0x333333, 0x1a1a1a);
+        this.scene.add(grid);
+
+        // 地面
+        const ground = new THREE.Mesh(
+          new THREE.PlaneGeometry(20, 20),
+          new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 })
+        );
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -0.01;
+        ground.receiveShadow = true;
+        this.scene.add(ground);
+
+        // 事件
+        window.addEventListener('resize', () => this.onResize());
+
+        // 动画循环
+        this.animate();
+        
+        // 隐藏加载
+        document.getElementById('loading').classList.add('hidden');
+        
+        // 初始对象
+        this.addPhysicsBox();
+        this.addParticleSystem('fire');
+      }
+
+      animate() {
+        requestAnimationFrame(() => this.animate());
+        
+        const deltaTime = 0.016; // 假设 60fps
+        
+        // 更新物理
+        this.physics.update(deltaTime);
+        
+        // 更新粒子
+        this.particleSystems.forEach(ps => ps.update(deltaTime));
+        
+        // 更新控制
+        this.controls.update();
+        
+        // 渲染
+        this.composer.render();
+        
+        // 更新统计
+        this.updateStats();
+      }
+
+      onResize() {
+        const canvas = document.getElementById('canvas');
+        const parent = canvas.parentElement;
+        this.camera.aspect = parent.clientWidth / parent.clientHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(parent.clientWidth, parent.clientHeight);
+        this.composer.setSize(parent.clientWidth, parent.clientHeight);
+      }
+
+      // ========== 对象创建 ==========
+      addCube() {
+        const geo = new THREE.BoxGeometry(1, 1, 1);
+        const mat = new THREE.MeshStandardMaterial({ color: 0x888888 });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set((Math.random()-0.5)*4, 3, (Math.random()-0.5)*4);
+        mesh.castShadow = true;
+        this.scene.add(mesh);
+        this.objects.push(mesh);
+      }
+
+      addSphere() {
+        const geo = new THREE.SphereGeometry(0.5, 32, 16);
+        const mat = new THREE.MeshStandardMaterial({ color: 0x888888 });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set((Math.random()-0.5)*4, 3, (Math.random()-0.5)*4);
+        mesh.castShadow = true;
+        this.scene.add(mesh);
+        this.objects.push(mesh);
+      }
+
+      addPhysicsBox() {
+        const geo = new THREE.BoxGeometry(1, 1, 1);
+        const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5) });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set((Math.random()-0.5)*4, 5 + Math.random() * 3, (Math.random()-0.5)*4);
+        mesh.rotation.set(Math.random(), Math.random(), Math.random());
+        mesh.castShadow = true;
+        this.scene.add(mesh);
+        this.objects.push(mesh);
+        this.physics.addBox(mesh, 1);
+      }
+
+      addPhysicsBall() {
+        const geo = new THREE.SphereGeometry(0.5, 32, 16);
+        const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5) });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set((Math.random()-0.5)*4, 5 + Math.random() * 3, (Math.random()-0.5)*4);
+        mesh.castShadow = true;
+        this.scene.add(mesh);
+        this.objects.push(mesh);
+        this.physics.addSphere(mesh, 0.5, 1);
+      }
+
+      // ========== 粒子系统 ==========
+      addParticleSystem(presetName) {
+        const preset = ParticlePresets[presetName];
+        if (!preset) return;
+        
+        const ps = new ParticleSystem(this.scene, preset);
+        ps.setPosition(new THREE.Vector3((Math.random()-0.5)*3, 1, (Math.random()-0.5)*3));
+        this.particleSystems.push(ps);
+        
+        // 爆发效果
+        if (presetName === 'explosion') {
+          ps.burst(50);
+        }
+      }
+
+      toggleParticles() {
+        const playing = document.getElementById('particle-play').checked;
+        this.particleSystems.forEach(ps => {
+          playing ? ps.play() : ps.pause();
+        });
+      }
+
+      burstParticles() {
+        this.particleSystems.forEach(ps => ps.burst(20));
+      }
+
+      clearParticles() {
+        this.particleSystems.forEach(ps => ps.clear());
+      }
+
+      updateParticleConfig(key, value) {
+        this.particleSystems.forEach(ps => {
+          ps.updateConfig(key, value);
+        });
+        document.getElementById('val-' + (key === 'emissionRate' ? 'emit' : key === 'maxParticles' ? 'maxp' : '')).textContent = value;
+      }
+
+      // ========== 物理控制 ==========
+      togglePhysics() {
+        this.isPhysicsPaused = this.physics.togglePause();
+        document.getElementById('btn-physics').textContent = this.isPhysicsPaused ? '▶️ 继续物理' : '⏸️ 暂停物理';
+        document.getElementById('st-physics').textContent = this.isPhysicsPaused ? '⏸️ 物理暂停' : '⚙️ 物理运行中';
+      }
+
+      updateGravity() {
+        const val = parseFloat(document.getElementById('gravity-y').value);
+        document.getElementById('val-gravity').textContent = val.toFixed(1);
+        this.physics.setGravity(val);
+      }
+
+      updateTimeScale() {
+        const val = parseFloat(document.getElementById('time-scale').value);
+        document.getElementById('val-timescale').textContent = val.toFixed(1);
+        this.physics.setTimeScale(val);
+      }
+
+      resetPhysics() {
+        this.physics.clear();
+        // 重新添加地面
+        this.physics.addGround();
+        // 清除所有动态物体
+        this.objects = this.objects.filter(obj => {
+          if (obj.geometry.type !== 'PlaneGeometry') {
+            this.scene.remove(obj);
+            return false;
+          }
+          return true;
+        });
+      }
+
+      applyExplosion() {
+        this.physics.applyExplosion(new THREE.Vector3(0, 0, 0), 15, 10);
+      }
+
+      applyUpForce() {
+        this.physics.applyUpForce(5);
+      }
+
+      updatePhysicsConfig(key, value) {
+        document.getElementById('val-' + (key === 'mass' ? 'mass' : key === 'restitution' ? 'rest' : 'fric')).textContent = value;
+      }
+
+      // ========== 场景 ==========
+      newScene() {
+        if (!confirm('确定新建场景？所有内容将清除。')) return;
+        this.physics.clear();
+        this.particleSystems.forEach(ps => ps.dispose());
+        this.particleSystems = [];
+        this.objects.forEach(obj => this.scene.remove(obj));
+        this.objects = [];
+        this.physics.addGround();
+      }
+
+      undo() {}
+      redo() {}
+
+      // ========== 统计 ==========
+      updateStats() {
+        const particleCount = this.particleSystems.reduce((sum, ps) => sum + ps.particleCount, 0);
+        document.getElementById('stat-particles').textContent = particleCount;
+        document.getElementById('stat-bodies').textContent = this.physics.getBodyCount();
+      }
+    }
+
+    // 启动
+    window.editor = new Editor();
+    
+    window.switchTab = (tab) => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById('particles-panel').style.display = tab === 'particles' ? 'block' : 'none';
+      document.getElementById('physics-panel').style.display = tab === 'physics' ? 'block' : 'none';
+    };
+    
+    // FPS 计数
+    let frames = 0, last = performance.now();
+    setInterval(() => {
+      const now = performance.now();
+      document.getElementById('stat-fps').textContent = Math.round(frames * 1000 / (now - last)) + ' FPS';
+      document.getElementById('st-fps').textContent = Math.round(frames * 1000 / (now - last)) + ' FPS';
+      frames = 0;
+      last = now;
+    }, 1000);
+    const origAnimate = window.editor.animate;
+    window.editor.animate = function() {
+      frames++;
+      origAnimate.call(this);
+    };
+  </script>
+</body>
+</html>

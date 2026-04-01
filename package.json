@@ -1,0 +1,29 @@
+{
+  "name": "webgpu-editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "基于 Three.js + WebGPU 的在线图形编辑器",
+  "scripts": {
+    "dev:editor": "pnpm --filter @webgpu-editor/editor dev",
+    "dev:player": "pnpm --filter @webgpu-editor/player dev",
+    "dev:core": "pnpm --filter @webgpu-editor/core dev",
+    "build": "pnpm -r build",
+    "build:core": "pnpm --filter @webgpu-editor/core build",
+    "test": "pnpm -r test",
+    "lint": "eslint . --ext .ts,.tsx",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.10",
+    "vitest": "^1.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebGPU Editor - Scene Export Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; font-family: system-ui, sans-serif; background: #0a0a0a; }
+    #app { display: flex; flex-direction: column; width: 100%; height: 100%; }
+    
+    /* 工具栏 */
+    #toolbar { height: 48px; background: linear-gradient(180deg, #2a2a2a 0%, #222 100%); border-bottom: 1px solid #333; display: flex; align-items: center; padding: 0 16px; gap: 8px; }
+    #toolbar button { padding: 7px 14px; background: #383838; color: #e0e0e0; border: 1px solid #444; border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.15s; }
+    #toolbar button:hover { background: #444; }
+    #toolbar button.primary { background: linear-gradient(180deg, #0e8add 0%, #0a6cb5 100%); border-color: #0e8add; color: white; }
+    #toolbar button.export { background: linear-gradient(180deg, #28a745 0%, #1e7e34 100%); border-color: #28a745; color: white; }
+    #toolbar button.export:hover { background: linear-gradient(180deg, #2eb34c 0%, #228b3a 100%); }
+    #toolbar .separator { width: 1px; height: 24px; background: #3a3a3a; margin: 0 4px; }
+    
+    /* 主布局 */
+    #main { flex: 1; display: flex; overflow: hidden; }
+    #left { width: 260px; background: #1a1a1a; border-right: 1px solid #2a2a2a; display: flex; flex-direction: column; }
+    .panel-header { height: 36px; background: linear-gradient(180deg, #252525 0%, #1f1f1f 100%); display: flex; align-items: center; padding: 0 14px; font-size: 12px; font-weight: 600; color: #ccc; border-bottom: 1px solid #2a2a2a; text-transform: uppercase; }
+    .panel-content { flex: 1; overflow: auto; padding: 10px; }
+    
+    #center { flex: 1; position: relative; background: #050505; }
+    #canvas { width: 100%; height: 100%; display: block; }
+    
+    /* 右侧面板 */
+    #right { width: 320px; background: #1a1a1a; border-left: 1px solid #2a2a2a; display: flex; flex-direction: column; overflow-y: auto; }
+    
+    /* 属性组 */
+    .prop-group { border-bottom: 1px solid #252525; }
+    .prop-group-header { height: 34px; background: linear-gradient(180deg, #222 0%, #1e1e1e 100%); display: flex; align-items: center; padding: 0 16px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: #888; }
+    .prop-group-content { padding: 16px; }
+    .prop-row { display: flex; align-items: center; margin-bottom: 12px; gap: 10px; }
+    .prop-row:last-child { margin-bottom: 0; }
+    .prop-label { width: 90px; color: #777; font-size: 11px; }
+    .prop-input { flex: 1; }
+    .prop-input input, .prop-input select, .prop-input textarea { 
+      width: 100%; 
+      padding: 8px 10px; 
+      background: #252525; 
+      border: 1px solid #333; 
+      border-radius: 4px; 
+      color: #ccc; 
+      font-size: 12px;
+      font-family: inherit;
+    }
+    .prop-input input:focus, .prop-input textarea:focus { outline: none; border-color: #0e8add; }
+    .prop-input textarea { min-height: 60px; resize: vertical; }
+    .checkbox-row { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+    .checkbox-row input { width: 16px; height: 16px; accent-color: #0e8add; }
+    
+    .btn-row { display: flex; gap: 8px; margin-top: 14px; }
+    .btn-row button { flex: 1; padding: 12px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.15s; }
+    .btn-row button:hover { background: #2eb34c; transform: translateY(-1px); }
+    
+    /* 状态栏 */
+    #statusbar { height: 28px; background: linear-gradient(180deg, #0a7acc 0%, #0866a8 100%); display: flex; align-items: center; padding: 0 16px; font-size: 11px; color: white; }
+    #statusbar span { margin-right: 24px; }
+    
+    /* 导出对话框 */
+    .export-dialog {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.8);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .export-dialog.active { display: flex; }
+    .export-dialog-content {
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 10px;
+      width: 90%;
+      max-width: 500px;
+      max-height: 80vh;
+      overflow: auto;
+    }
+    .export-dialog-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #333;
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .export-dialog-close {
+      background: none;
+      border: none;
+      color: #666;
+      font-size: 20px;
+      cursor: pointer;
+    }
+    .export-dialog-close:hover { color: #fff; }
+    .export-dialog-body { padding: 20px; }
+    .export-preview {
+      background: #0a0a0a;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 12px;
+      font-family: 'Consolas', monospace;
+      font-size: 11px;
+      color: #888;
+      margin-top: 12px;
+      max-height: 200px;
+      overflow: auto;
+    }
+    
+    #loading { position: fixed; inset: 0; background: #0a0a0a; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #555; z-index: 1000; }
+    #loading.hidden { display: none; }
+    .spinner { width: 50px; height: 50px; border: 3px solid #1a1a1a; border-top-color: #0e8add; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 工具栏 -->
+    <div id="toolbar">
+      <button onclick="editor.addCube()" class="primary">⧉ 立方体</button>
+      <button onclick="editor.addSphere()" class="primary">○ 球体</button>
+      <button onclick="editor.addEmissive()" class="primary">✨ 发光体</button>
+      <button onclick="editor.addLight()" class="primary">💡 光源</button>
+      <div style="flex:1"></div>
+      <button onclick="editor.showExportDialog()" class="export">📦 导出 HTML 场景</button>
+    </div>
+
+    <!-- 主区域 -->
+    <div id="main">
+      <!-- 左侧面板：场景层级 -->
+      <div id="left">
+        <div class="panel-header">📂 场景层级</div>
+        <div class="panel-content" id="scene-tree">
+          <div style="padding: 20px; text-align: center; color: #555; font-size: 12px;">暂无对象</div>
+        </div>
+      </div>
+
+      <!-- 中间视口 -->
+      <div id="center">
+        <canvas id="canvas"></canvas>
+      </div>
+
+      <!-- 右侧面板：导出设置 -->
+      <div id="right">
+        <div class="prop-group">
+          <div class="prop-group-header">🚀 快速导出</div>
+          <div class="prop-group-content">
+            <p style="color: #888; font-size: 12px; line-height: 1.6; margin-bottom: 16px;">
+              将当前场景导出为独立的 HTML 文件，可以在任何浏览器中打开，无需服务器。
+            </p>
+            <div class="btn-row">
+              <button onclick="editor.quickExport()">⚡ 快速导出</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="prop-group">
+          <div class="prop-group-header">⚙️ 导出设置</div>
+          <div class="prop-group-content">
+            <div class="prop-row">
+              <label class="checkbox-row">
+                <input id="opt-postprocess" type="checkbox" checked>
+                <span>包含后处理效果 (Bloom)</span>
+              </label>
+            </div>
+            <div class="prop-row">
+              <label class="checkbox-row">
+                <input id="opt-shadows" type="checkbox" checked>
+                <span>启用阴影</span>
+              </label>
+            </div>
+            <div class="prop-row">
+              <label class="checkbox-row">
+                <input id="opt-ui" type="checkbox" checked>
+                <span>包含控制 UI</span>
+              </label>
+            </div>
+            <div class="prop-row">
+              <label class="checkbox-row">
+                <input id="opt-autorotate" type="checkbox">
+                <span>自动旋转</span>
+              </label>
+            </div>
+            <div class="prop-row">
+              <label class="checkbox-row">
+                <input id="opt-fullscreen" type="checkbox" checked>
+                <span>启用全屏按钮</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="prop-group">
+          <div class="prop-group-header">ℹ️ 关于导出</div>
+          <div class="prop-group-content">
+            <p style="color: #666; font-size: 11px; line-height: 1.6;">
+              • 导出文件包含所有场景数据<br>
+              • 使用 Three.js CDN 加载<br>
+              • 支持现代浏览器 (Chrome/Firefox/Edge)<br>
+              • 文件大小取决于场景复杂度
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 状态栏 -->
+    <div id="statusbar">
+      <span id="st-mode">🟢 就绪</span>
+      <span id="st-obj">0 个对象</span>
+      <span id="st-render">WebGL2</span>
+      <span id="st-fps">-- FPS</span>
+    </div>
+  </div>
+
+  <!-- 导出对话框 -->
+  <div class="export-dialog" id="export-dialog">
+    <div class="export-dialog-content">
+      <div class="export-dialog-header">
+        <span>📦 导出场景</span>
+        <button class="export-dialog-close" onclick="editor.hideExportDialog()">×</button>
+      </div>
+      <div class="export-dialog-body">
+        <div class="prop-row">
+          <span class="prop-label">场景名称</span>
+          <div class="prop-input">
+            <input id="export-title" type="text" value="My Awesome Scene" placeholder="输入场景名称">
+          </div>
+        </div>
+        <div class="prop-row">
+          <span class="prop-label">描述</span>
+          <div class="prop-input">
+            <textarea id="export-desc" placeholder="场景描述（可选）"></textarea>
+          </div>
+        </div>
+        <div class="prop-row">
+          <span class="prop-label">作者</span>
+          <div class="prop-input">
+            <input id="export-author" type="text" value="WebGPU Editor" placeholder="作者名称">
+          </div>
+        </div>
+        
+        <div class="export-preview" id="export-preview">
+          点击"导出"生成文件...
+        </div>
+        
+        <div class="btn-row" style="margin-top: 20px;">
+          <button onclick="editor.performExport()">📥 下载 HTML 文件</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <div>初始化编辑器...</div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { TransformControls } from 'three/addons/controls/TransformControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+    // ========== 场景导出器 ==========
+    class SceneExporter {
+      static export(scene, camera, options = {}) {
+        const sceneData = this.serializeScene(scene);
+        const html = this.generateHTML(sceneData, options);
+        return {
+          html,
+          filename: this.sanitizeFilename(options.title || 'scene') + '.html',
+          size: new Blob([html]).size
+        };
+      }
+
+      static serializeScene(scene) {
+        const data = {
+          version: '1.0.0',
+          metadata: {
+            name: scene.name || 'Scene',
+            created: Date.now()
+          },
+          scene: this.serializeObject(scene)
+        };
+        return data;
+      }
+
+      static serializeObject(obj) {
+        const data = {
+          uuid: obj.uuid,
+          type: obj.type,
+          name: obj.name,
+          visible: obj.visible,
+          transform: {
+            position: [obj.position.x, obj.position.y, obj.position.z],
+            rotation: [
+              obj.rotation.x * 180 / Math.PI,
+              obj.rotation.y * 180 / Math.PI,
+              obj.rotation.z * 180 / Math.PI
+            ],
+            scale: [obj.scale.x, obj.scale.y, obj.scale.z]
+          },
+          children: []
+        };
+
+        if (obj.isMesh) {
+          const geoType = obj.geometry.type;
+          data.geometry = { type: geoType };
+          
+          if (geoType === 'BoxGeometry') {
+            const params = obj.geometry.parameters;
+            data.geometry.parameters = { width: params.width, height: params.height, depth: params.depth };
+          } else if (geoType === 'SphereGeometry') {
+            const params = obj.geometry.parameters;
+            data.geometry.parameters = { radius: params.radius };
+          } else if (geoType === 'PlaneGeometry') {
+            const params = obj.geometry.parameters;
+            data.geometry.parameters = { width: params.width, height: params.height };
+          }
+
+          const mat = obj.material;
+          data.material = {
+            type: mat.type,
+            color: [mat.color.r, mat.color.g, mat.color.b]
+          };
+          if (mat.emissive) {
+            data.material.emissive = [mat.emissive.r, mat.emissive.g, mat.emissive.b];
+          }
+          if (mat.roughness !== undefined) data.material.roughness = mat.roughness;
+          if (mat.metalness !== undefined) data.material.metalness = mat.metalness;
+        }
+
+        if (obj.isLight) {
+          data.light = {
+            color: [obj.color.r, obj.color.g, obj.color.b],
+            intensity: obj.intensity
+          };
+        }
+
+        obj.children.forEach(child => {
+          if (!child.isCamera && !child.isTransformControls) {
+            const childData = this.serializeObject(child);
+            if (childData) data.children.push(childData);
+          }
+        });
+
+        return data;
+      }
+
+      static generateHTML(sceneData, options) {
+        const sceneJSON = JSON.stringify(sceneData, null, 2);
+        
+        return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>${this.escapeHTML(options.title)}</title>
+  <meta name="description" content="${this.escapeHTML(options.description || '')}">
+  <meta name="author" content="${this.escapeHTML(options.author)}">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a0a; font-family: system-ui, sans-serif; }
+    #container { width: 100%; height: 100%; position: relative; }
+    canvas { width: 100% !important; height: 100% !important; display: block; }
+    #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #666; font-size: 14px; }
+    #loading.hidden { opacity: 0; pointer-events: none; transition: opacity 0.5s; }
+    .spinner { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.1); border-top-color: #0e8add; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 12px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    ${options.includeUI ? `
+    #ui { position: absolute; top: 20px; left: 20px; color: white; z-index: 100; }
+    #ui h1 { font-size: 18px; font-weight: 500; margin-bottom: 8px; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+    #controls { position: absolute; bottom: 20px; right: 20px; display: flex; gap: 10px; z-index: 100; }
+    #controls button { padding: 8px 16px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 6px; cursor: pointer; font-size: 12px; backdrop-filter: blur(10px); }
+    #controls button:hover { background: rgba(255,255,255,0.1); }
+    ` : ''}
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="loading">
+      <div class="spinner"></div>
+      <div>Loading Scene...</div>
+    </div>
+    ${options.includeUI ? `
+    <div id="ui">
+      <h1>${this.escapeHTML(options.title)}</h1>
+    </div>
+    <div id="controls">
+      <button onclick="player.toggleAutoRotate()">🔄 Auto Rotate</button>
+      <button onclick="player.resetCamera()">📷 Reset View</button>
+      ${options.enableFullscreen ? '<button onclick="player.toggleFullscreen()">⛶ Fullscreen</button>' : ''}
+    </div>
+    ` : ''}
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    ${options.includePostProcessing ? `
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+    ` : ''}
+
+    const sceneData = ${sceneJSON};
+
+    class ScenePlayer {
+      constructor() {
+        this.container = document.getElementById('container');
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+        this.controls = null;
+        ${options.includePostProcessing ? 'this.composer = null;' : ''}
+        
+        this.init();
+      }
+
+      init() {
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        ${options.shadowMap ? `
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        ` : ''}
+        this.renderer.setClearColor(0x0a0a0a);
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.container.appendChild(this.renderer.domElement);
+
+        this.scene = this.parseScene(sceneData.scene);
+
+        this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.camera.position.set(5, 5, 5);
+        this.camera.lookAt(0, 0, 0);
+
+        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.enableDamping = true;
+        this.controls.autoRotate = ${options.autoRotate};
+
+        ${options.includePostProcessing ? `
+        this.composer = new EffectComposer(this.renderer);
+        this.composer.addPass(new RenderPass(this.scene, this.camera));
+        this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.5, 0.4, 0.85));
+        this.composer.addPass(new OutputPass());
+        ` : ''}
+
+        window.addEventListener('resize', () => this.onResize());
+        document.getElementById('loading').classList.add('hidden');
+        this.animate();
+      }
+
+      parseScene(data) {
+        const scene = new THREE.Scene();
+        
+        const parseObject = (objData) => {
+          let obj;
+          
+          switch (objData.type) {
+            case 'Mesh':
+              obj = this.createMesh(objData);
+              break;
+            case 'Group':
+              obj = new THREE.Group();
+              break;
+            case 'Scene':
+              obj = new THREE.Scene();
+              break;
+            case 'AmbientLight':
+              obj = new THREE.AmbientLight(new THREE.Color(...objData.light.color), objData.light.intensity);
+              break;
+            case 'DirectionalLight':
+              obj = new THREE.DirectionalLight(new THREE.Color(...objData.light.color), objData.light.intensity);
+              obj.castShadow = true;
+              break;
+            case 'PointLight':
+              obj = new THREE.PointLight(new THREE.Color(...objData.light.color), objData.light.intensity);
+              break;
+            default:
+              obj = new THREE.Object3D();
+          }
+          
+          if (obj) {
+            obj.name = objData.name;
+            obj.visible = objData.visible;
+            obj.position.set(...objData.transform.position);
+            obj.rotation.set(
+              objData.transform.rotation[0] * Math.PI / 180,
+              objData.transform.rotation[1] * Math.PI / 180,
+              objData.transform.rotation[2] * Math.PI / 180
+            );
+            obj.scale.set(...objData.transform.scale);
+            
+            objData.children.forEach(childData => {
+              const child = parseObject(childData);
+              if (child) obj.add(child);
+            });
+          }
+          
+          return obj;
+        };
+        
+        data.children.forEach(childData => {
+          const child = parseObject(childData);
+          if (child) scene.add(child);
+        });
+        
+        return scene;
+      }
+
+      createMesh(data) {
+        let geometry;
+        const params = data.geometry?.parameters || {};
+        
+        switch (data.geometry?.type) {
+          case 'BoxGeometry':
+            geometry = new THREE.BoxGeometry(params.width || 1, params.height || 1, params.depth || 1);
+            break;
+          case 'SphereGeometry':
+            geometry = new THREE.SphereGeometry(params.radius || 0.5, 32, 16);
+            break;
+          case 'PlaneGeometry':
+            geometry = new THREE.PlaneGeometry(params.width || 1, params.height || 1);
+            break;
+          default:
+            geometry = new THREE.BoxGeometry(1, 1, 1);
+        }
+        
+        const matData = data.material || { type: 'MeshStandardMaterial', color: [0.8, 0.8, 0.8] };
+        const material = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(...matData.color),
+          roughness: matData.roughness ?? 0.5,
+          metalness: matData.metalness ?? 0,
+          emissive: matData.emissive ? new THREE.Color(...matData.emissive) : new THREE.Color(0, 0, 0)
+        });
+        
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        return mesh;
+      }
+
+      onResize() {
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        ${options.includePostProcessing ? 'if (this.composer) this.composer.setSize(window.innerWidth, window.innerHeight);' : ''}
+      }
+
+      animate() {
+        requestAnimationFrame(() => this.animate());
+        this.controls.update();
+        ${options.includePostProcessing ? 'if (this.composer) this.composer.render(); else this.renderer.render(this.scene, this.camera);' : 'this.renderer.render(this.scene, this.camera);'}
+      }
+
+      ${options.includeUI ? `
+      toggleAutoRotate() { this.controls.autoRotate = !this.controls.autoRotate; }
+      resetCamera() { this.camera.position.set(5, 5, 5); this.camera.lookAt(0, 0, 0); this.controls.reset(); }
+      toggleFullscreen() {
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+        else document.exitFullscreen();
+      }
+      ` : ''}
+    }
+
+    window.player = new ScenePlayer();
+  </script>
+</body>
+</html>`;
+      }
+
+      static escapeHTML(str) {
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+
+      static sanitizeFilename(name) {
+        return name.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-').replace(/^-+|-+$/g, '') || 'scene';
+      }
+    }
+
+    // ========== 编辑器主类 ==========
+    class Editor {
+      constructor() {
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+        this.composer = null;
+        this.controls = null;
+        this.objects = [];
+        
+        this.init();
+      }
+
+      init() {
+        const canvas = document.getElementById('canvas');
+        
+        this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+        this.renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x0a0a0a);
+        this.scene.name = 'My Scene';
+
+        this.camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+        this.camera.position.set(5, 5, 5);
+        this.camera.lookAt(0, 0, 0);
+
+        this.controls = new OrbitControls(this.camera, canvas);
+        this.controls.enableDamping = true;
+
+        this.composer = new EffectComposer(this.renderer);
+        this.composer.addPass(new RenderPass(this.scene, this.camera));
+        this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(canvas.clientWidth, canvas.clientHeight), 0.5, 0.4, 0.85));
+        this.composer.addPass(new OutputPass());
+
+        const ambient = new THREE.AmbientLight(0x404040, 0.5);
+        ambient.name = '环境光';
+        this.scene.add(ambient);
+
+        const dir = new THREE.DirectionalLight(0xffffff, 1);
+        dir.name = '主光源';
+        dir.position.set(5, 10, 5);
+        dir.castShadow = true;
+        this.scene.add(dir);
+
+        const grid = new THREE.GridHelper(20, 20, 0x333333, 0x1a1a1a);
+        grid.name = '网格';
+        this.scene.add(grid);
+
+        window.addEventListener('resize', () => this.onResize());
+        this.animate();
+        
+        document.getElementById('loading').classList.add('hidden');
+        
+        // 添加一些初始对象
+        this.addCube();
+        this.addEmissive();
+      }
+
+      animate() {
+        requestAnimationFrame(() => this.animate());
+        this.controls.update();
+        this.composer.render();
+      }
+
+      onResize() {
+        const canvas = document.getElementById('canvas');
+        const parent = canvas.parentElement;
+        this.camera.aspect = parent.clientWidth / parent.clientHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(parent.clientWidth, parent.clientHeight);
+        this.composer.setSize(parent.clientWidth, parent.clientHeight);
+      }
+
+      addCube() {
+        const geo = new THREE.BoxGeometry(1, 1, 1);
+        const mat = new THREE.MeshStandardMaterial({ 
+          color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5)
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.name = '立方体 ' + (this.objects.filter(o => o.name?.includes('立方')).length + 1);
+        mesh.position.set((Math.random()-0.5)*4, 1, (Math.random()-0.5)*4);
+        mesh.castShadow = true;
+        this.scene.add(mesh);
+        this.objects.push(mesh);
+        this.updateTree();
+      }
+
+      addSphere() {
+        const geo = new THREE.SphereGeometry(0.5, 32, 16);
+        const mat = new THREE.MeshStandardMaterial({ 
+          color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5)
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.name = '球体 ' + (this.objects.filter(o => o.name?.includes('球')).length + 1);
+        mesh.position.set((Math.random()-0.5)*4, 1, (Math.random()-0.5)*4);
+        mesh.castShadow = true;
+        this.scene.add(mesh);
+        this.objects.push(mesh);
+        this.updateTree();
+      }
+
+      addEmissive() {
+        const geo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+        const mat = new THREE.MeshStandardMaterial({ 
+          color: new THREE.Color().setHSL(Math.random() * 0.1 + 0.5, 0.8, 0.5),
+          emissive: new THREE.Color().setHSL(Math.random() * 0.1 + 0.05, 1, 0.5),
+          emissiveIntensity: 2
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.name = '发光体 ' + (this.objects.filter(o => o.name?.includes('发光')).length + 1);
+        mesh.position.set((Math.random()-0.5)*3, 1, (Math.random()-0.5)*3);
+        mesh.castShadow = true;
+        this.scene.add(mesh);
+        this.objects.push(mesh);
+        this.updateTree();
+      }
+
+      addLight() {
+        const light = new THREE.PointLight(0xffaa00, 1, 10);
+        light.name = '点光源 ' + (this.objects.filter(o => o.name?.includes('光源')).length + 1);
+        light.position.set(2, 3, 2);
+        this.scene.add(light);
+        this.updateTree();
+      }
+
+      updateTree() {
+        const tree = document.getElementById('scene-tree');
+        if (this.objects.length === 0) {
+          tree.innerHTML = '<div style="padding: 20px; text-align: center; color: #555;">暂无对象</div>';
+          return;
+        }
+        let html = '';
+        this.objects.forEach((obj, i) => {
+          const icon = obj.isMesh ? '🎲' : '💡';
+          html += `<div style="padding: 8px; cursor: pointer; border-radius: 4px; color: #aaa; font-size: 12px;" onmouseover="this.style.background='#252525'" onmouseout="this.style.background='transparent'">${icon} ${obj.name}</div>`;
+        });
+        tree.innerHTML = html;
+        document.getElementById('st-obj').textContent = this.objects.length + ' 个对象';
+      }
+
+      // ========== 导出功能 ==========
+      showExportDialog() {
+        document.getElementById('export-dialog').classList.add('active');
+        this.updateExportPreview();
+      }
+
+      hideExportDialog() {
+        document.getElementById('export-dialog').classList.remove('active');
+      }
+
+      quickExport() {
+        const options = {
+          title: 'My Scene',
+          description: 'Created with WebGPU Editor',
+          author: 'WebGPU Editor',
+          includePostProcessing: document.getElementById('opt-postprocess').checked,
+          includeUI: document.getElementById('opt-ui').checked,
+          shadowMap: document.getElementById('opt-shadows').checked,
+          autoRotate: document.getElementById('opt-autorotate').checked,
+          enableFullscreen: document.getElementById('opt-fullscreen').checked
+        };
+        
+        const result = SceneExporter.export(this.scene, this.camera, options);
+        this.downloadFile(result.html, result.filename);
+      }
+
+      performExport() {
+        const options = {
+          title: document.getElementById('export-title').value || 'My Scene',
+          description: document.getElementById('export-desc').value,
+          author: document.getElementById('export-author').value || 'WebGPU Editor',
+          includePostProcessing: document.getElementById('opt-postprocess').checked,
+          includeUI: document.getElementById('opt-ui').checked,
+          shadowMap: document.getElementById('opt-shadows').checked,
+          autoRotate: document.getElementById('opt-autorotate').checked,
+          enableFullscreen: document.getElementById('opt-fullscreen').checked
+        };
+        
+        const result = SceneExporter.export(this.scene, this.camera, options);
+        this.downloadFile(result.html, result.filename);
+        this.hideExportDialog();
+        
+        // 显示成功提示
+        alert(`✅ 场景已导出！\n文件名: ${result.filename}\n大小: ${(result.size / 1024).toFixed(1)} KB`);
+      }
+
+      updateExportPreview() {
+        const objCount = this.objects.length;
+        const options = {
+          includePostProcessing: document.getElementById('opt-postprocess').checked,
+          includeUI: document.getElementById('opt-ui').checked,
+          shadowMap: document.getElementById('opt-shadows').checked
+        };
+        
+        const features = [];
+        if (options.includePostProcessing) features.push('✨ Bloom 后处理');
+        if (options.shadowMap) features.push('🔲 阴影');
+        if (options.includeUI) features.push('🎮 控制 UI');
+        
+        document.getElementById('export-preview').innerHTML = `
+          <strong>导出内容预览:</strong><br>
+          • 对象数量: ${objCount} 个<br>
+          • 功能: ${features.join(', ') || '基础渲染'}<br>
+          • 格式: 独立 HTML 文件<br>
+          • CDN: unpkg.com (Three.js)
+        `;
+      }
+
+      downloadFile(content, filename) {
+        const blob = new Blob([content], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    }
+
+    window.editor = new Editor();
+    
+    // FPS
+    let frames = 0, last = performance.now();
+    setInterval(() => {
+      const now = performance.now();
+      document.getElementById('st-fps').textContent = Math.round(frames * 1000 / (now - last)) + ' FPS';
+      frames = 0;
+      last = now;
+    }, 1000);
+    const origAnimate = window.editor.animate;
+    window.editor.animate = function() {
+      frames++;
+      origAnimate.call(this);
+    };
+  </script>
+</body>
+</html>

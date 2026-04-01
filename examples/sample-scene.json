@@ -1,0 +1,127 @@
+{
+  "version": "1.0.0",
+  "metadata": {
+    "name": "示例场景",
+    "description": "包含基础几何体和光源的示例场景",
+    "created": 1703500800000,
+    "modified": 1703500800000,
+    "author": "WebGPU Editor"
+  },
+  "resources": {
+    "textures": [],
+    "materials": [],
+    "geometries": []
+  },
+  "scene": {
+    "uuid": "scene-001",
+    "type": "Scene",
+    "name": "示例场景",
+    "visible": true,
+    "transform": {
+      "position": [0, 0, 0],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1]
+    },
+    "children": [
+      {
+        "uuid": "ambient-001",
+        "type": "AmbientLight",
+        "name": "环境光",
+        "visible": true,
+        "transform": {
+          "position": [0, 0, 0],
+          "rotation": [0, 0, 0],
+          "scale": [1, 1, 1]
+        },
+        "light": {
+          "color": [0.5, 0.5, 0.5],
+          "intensity": 0.5
+        },
+        "children": []
+      },
+      {
+        "uuid": "dir-001",
+        "type": "DirectionalLight",
+        "name": "主光源",
+        "visible": true,
+        "transform": {
+          "position": [5, 10, 7],
+          "rotation": [0, 0, 0],
+          "scale": [1, 1, 1]
+        },
+        "light": {
+          "color": [1, 1, 1],
+          "intensity": 1,
+          "castShadow": true
+        },
+        "children": []
+      },
+      {
+        "uuid": "cube-001",
+        "type": "Mesh",
+        "name": "红色立方体",
+        "visible": true,
+        "transform": {
+          "position": [0, 0.5, 0],
+          "rotation": [0, 0, 0],
+          "scale": [1, 1, 1]
+        },
+        "geometry": {
+          "type": "Box",
+          "parameters": { "width": 1, "height": 1, "depth": 1 }
+        },
+        "material": {
+          "type": "MeshStandard",
+          "color": [0.8, 0.2, 0.2],
+          "roughness": 0.5,
+          "metalness": 0.1
+        },
+        "children": []
+      },
+      {
+        "uuid": "sphere-001",
+        "type": "Mesh",
+        "name": "蓝色球体",
+        "visible": true,
+        "transform": {
+          "position": [2, 0.5, 0],
+          "rotation": [0, 0, 0],
+          "scale": [1, 1, 1]
+        },
+        "geometry": {
+          "type": "Sphere",
+          "parameters": { "radius": 0.5, "widthSegments": 32, "heightSegments": 16 }
+        },
+        "material": {
+          "type": "MeshStandard",
+          "color": [0.2, 0.4, 0.9],
+          "roughness": 0.3,
+          "metalness": 0.2
+        },
+        "children": []
+      },
+      {
+        "uuid": "ground-001",
+        "type": "Mesh",
+        "name": "地面",
+        "visible": true,
+        "transform": {
+          "position": [0, -0.5, 0],
+          "rotation": [-90, 0, 0],
+          "scale": [10, 10, 1]
+        },
+        "geometry": {
+          "type": "Plane",
+          "parameters": { "width": 1, "height": 1 }
+        },
+        "material": {
+          "type": "MeshStandard",
+          "color": [0.3, 0.3, 0.3],
+          "roughness": 0.8,
+          "metalness": 0.0
+        },
+        "children": []
+      }
+    ]
+  }
+}
