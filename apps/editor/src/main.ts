@@ -535,6 +535,41 @@ class Editor {
     const size = this.ui.getViewportSize();
     this.postProcessing.resize(size.width, size.height);
   }
+
+  // -------------------------------------------------------------------------
+  // Draggable Panel Mode (Public API)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Enable draggable panel mode - panels can be dragged to reposition
+   * Shortcut: Shift+D
+   */
+  enableDraggableMode(): void {
+    this.ui.enableDraggableMode();
+  }
+
+  /**
+   * Disable draggable panel mode - panels return to docked positions
+   * Shortcut: Shift+D
+   */
+  disableDraggableMode(): void {
+    this.ui.disableDraggableMode();
+  }
+
+  /**
+   * Toggle draggable panel mode
+   * Shortcut: Shift+D
+   */
+  toggleDraggableMode(): void {
+    this.ui.toggleDraggableMode();
+  }
+
+  /**
+   * Check if currently using responsive layout
+   */
+  isResponsiveLayout(): boolean {
+    return this.ui.isResponsiveLayout();
+  }
 }
 
 // ============================================================================
@@ -542,5 +577,8 @@ class Editor {
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
-  new Editor();
+  const editor = new Editor();
+  
+  // Expose editor to window for debugging and console access
+  (window as any).editor = editor;
 });

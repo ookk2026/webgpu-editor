@@ -14,6 +14,8 @@
 import { SceneTree } from './SceneTree';
 import { PropertyPanel } from './PropertyPanel';
 import { PostProcessingPanel } from './PostProcessingPanel';
+import { DraggablePanel } from './DraggablePanel';
+import { ResponsiveLayout, PanelSide } from './ResponsiveLayout';
 
 // ============================================================================
 // Types
@@ -51,6 +53,11 @@ export class UIManager {
   private sceneTree: SceneTree;
   private propertyPanel: PropertyPanel;
   private postProcessingPanel: PostProcessingPanel;
+
+  // Layout Systems
+  private responsiveLayout: ResponsiveLayout;
+  private draggablePanels: Map<string, DraggablePanel> = new Map();
+  private useResponsiveLayout = true; // Default to responsive, not draggable
 
   // DOM Elements
   private toolbar: HTMLElement;
@@ -98,6 +105,166 @@ export class UIManager {
     this.setupPanelTabs();
     this.setupKeyboardShortcuts();
     this.setupStatusBar();
+
+    // Initialize responsive layout (default)
+    this.responsiveLayout = new ResponsiveLayout();
+    this.responsiveLayout.setupGlobalEvents();
+
+    // Initialize draggable panels (optional mode)
+    this.setupDraggablePanels();
+  }
+
+  // -------------------------------------------------------------------------
+  // Responsive Layout Feature (Default)
+  // -------------------------------------------------------------------------
+
+  getResponsiveLayout(): ResponsiveLayout {
+    return this.responsiveLayout;
+  }
+
+  collapsePanel(side: PanelSide): void {
+    if (this.useResponsiveLayout) {
+      this.responsiveLayout.collapsePanel(side);
+    }
+  }
+
+  expandPanel(side: PanelSide): void {
+    if (this.useResponsiveLayout) {
+      this.responsiveLayout.expandPanel(side);
+    }
+  }
+
+  togglePanelCollapse(side: PanelSide): void {
+    if (this.useResponsiveLayout) {
+      this.responsiveLayout.togglePanel(side);
+    }
+  }
+
+  resetLayout(): void {
+    this.responsiveLayout.resetLayout();
+  }
+
+  // -------------------------------------------------------------------------
+  // Draggable Panels Feature (Alternative Mode)
+  // -------------------------------------------------------------------------
+
+  private setupDraggablePanels(): void {
+    // Create draggable panels but don't enable them by default
+    // Draggable mode is an alternative to responsive layout
+    
+    const scenePanelDraggable = new DraggablePanel('scene-panel', {
+      handle: '#scene-panel-header',
+      bounds: '#workspace',
+      snapToEdges: true,
+      snapThreshold: 20,
+      savePosition: true,
+      storageKey: 'editor-scene-panel-pos-drag',
+    });
+    scenePanelDraggable.disable();
+    this.draggablePanels.set('scene', scenePanelDraggable);
+
+    const propertiesPanelDraggable = new DraggablePanel('properties-panel', {
+      handle: '.panel-tabs',
+      bounds: '#workspace',
+      snapToEdges: true,
+      snapThreshold: 20,
+      savePosition: true,
+      storageKey: 'editor-properties-panel-pos-drag',
+    });
+    propertiesPanelDraggable.disable();
+    this.draggablePanels.set('properties', propertiesPanelDraggable);
+
+    const toolbarDraggable = new DraggablePanel('toolbar', {
+      bounds: 'window',
+      snapToEdges: true,
+      snapThreshold: 10,
+      savePosition: true,
+      storageKey: 'editor-toolbar-pos-drag',
+    });
+    toolbarDraggable.disable();
+    this.draggablePanels.set('toolbar', toolbarDraggable);
+  }
+
+  /**
+   * Enable draggable panel mode (alternative to responsive layout)
+   * Panels can be freely dragged to reposition
+   */
+  enableDraggableMode(): void {
+    this.useResponsiveLayout = false;
+    
+    // Disable responsive layout first
+    this.responsiveLayout.resetLayout();
+    
+    // Enable drag on panels
+    this.draggablePanels.forEach(panel => panel.enable());
+
+    // Add visual indicator
+    this.scenePanel.classList.add('draggable');
+    this.propertiesPanel.classList.add('draggable');
+    this.toolbar.classList.add('draggable');
+
+    this.showNotification('拖动模式已启用 - Shift+D 切换回响应式布局');
+  }
+
+  /**
+   * Disable draggable panel mode, enable responsive layout
+   */
+  disableDraggableMode(): void {
+    this.useResponsiveLayout = true;
+    
+    // Disable drag
+    this.draggablePanels.forEach(panel => panel.disable());
+
+    // Remove visual indicator
+    this.scenePanel.classList.remove('draggable');
+    this.propertiesPanel.classList.remove('draggable');
+    this.toolbar.classList.remove('draggable');
+
+    // Reset positions and restore responsive layout
+    this.draggablePanels.forEach(panel => panel.resetPosition());
+    this.responsiveLayout.resetLayout();
+
+    this.showNotification('响应式布局已启用');
+  }
+
+  /**
+   * Toggle between draggable and responsive layout modes
+   */
+  toggleDraggableMode(): void {
+    if (this.useResponsiveLayout) {
+      this.enableDraggableMode();
+    } else {
+      this.disableDraggableMode();
+    }
+  }
+
+  /**
+   * Check if currently using responsive layout
+   */
+  isResponsiveLayout(): boolean {
+    return this.useResponsiveLayout;
+  }
+
+  private showNotification(message: string): void {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+      position: fixed;
+      top: 50px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #0e639c;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 12px;
+      z-index: 10000;
+      pointer-events: none;
+      animation: fadeInOut 2s ease;
+    `;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+    
+    setTimeout(() => notification.remove(), 2000);
   }
 
   // -------------------------------------------------------------------------
@@ -345,6 +512,24 @@ export class UIManager {
           break;
         case 'f':
           this.callbacks.onFocus();
+          break;
+        case 'd':
+          // Toggle draggable panel mode
+          if (e.shiftKey) {
+            this.toggleDraggableMode();
+          }
+          break;
+        case 'b':
+          // Toggle left panel (B for Browser/Scene)
+          if (e.shiftKey) {
+            this.togglePanelCollapse('left');
+          }
+          break;
+        case 'p':
+          // Toggle right panel (P for Properties)
+          if (e.shiftKey) {
+            this.togglePanelCollapse('right');
+          }
           break;
         case 'delete':
         case 'backspace':
