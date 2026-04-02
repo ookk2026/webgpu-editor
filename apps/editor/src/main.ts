@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
+import { DirectionalLightHelper, PointLightHelper, SpotLightHelper } from 'three';
 
 // Minimal Editor Implementation
 class Editor {
@@ -17,6 +18,9 @@ class Editor {
   private selectedObject: THREE.Object3D | null = null;
   private transformMode: 'translate' | 'rotate' | 'scale' = 'translate';
   private isDragging = false;
+  
+  // Light helpers
+  private lightHelpers: Map<string, THREE.Object3D> = new Map();
   
   // DOM Elements
   private viewport: HTMLElement;
@@ -69,7 +73,7 @@ class Editor {
     // Transform Controls
     this.transformControls = new TransformControls(this.camera, this.renderer.domElement);
     this.transformControls.setMode('translate');
-    this.transformControls.setSize(1.2);
+    this.transformControls.setSize(0.6); // Smaller handles
     this.scene.add(this.transformControls);
 
     // Grid Helper
@@ -90,6 +94,9 @@ class Editor {
     const overlay = document.getElementById('overlay');
     if (overlay) overlay.classList.add('hidden');
 
+    // Create helpers for all existing lights
+    this.ensureAllLightHelpers();
+    
     console.log('[Editor] Initialized');
   }
 
@@ -97,6 +104,11 @@ class Editor {
     requestAnimationFrame(() => this.animate());
     
     this.orbitControls.update();
+    
+    // Update all light helpers
+    this.ensureAllLightHelpers();
+    this.updateLightHelperSelection();
+    
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -239,10 +251,8 @@ class Editor {
         
         console.log('[Editor] Selected:', target.name || target.type);
         this.selectObject(target);
-      } else {
-        // Clicked on empty space - deselect
-        this.selectObject(null);
       }
+      // Note: Don't deselect when clicking empty space - allows orbiting without losing selection
     }, 5);
   }
 
@@ -270,16 +280,68 @@ class Editor {
     if (obj) {
       this.transformControls.attach(obj);
       this.transformControls.visible = true;
-      this.transformControls.setSize(1.5); // Make handles larger
+      this.transformControls.setSize(0.6); // Smaller handles
       console.log('[Editor] Attached TransformControls to', obj.name || obj.type);
     } else {
       this.transformControls.detach();
       this.transformControls.visible = false;
     }
 
+    // Update light helpers visibility based on selection
+    this.updateLightHelperSelection();
+
     // Update UI
     this.updatePropertyPanel();
     this.updateSceneTreeSelection();
+  }
+
+  // Create helper for a light when it's added to scene
+  private createLightHelper(light: THREE.Light): void {
+    let helper: THREE.Object3D | null = null;
+    
+    if (light instanceof THREE.DirectionalLight) {
+      helper = new DirectionalLightHelper(light, 1);
+    } else if (light instanceof THREE.PointLight) {
+      helper = new PointLightHelper(light, 0.5);
+    } else if (light instanceof THREE.SpotLight) {
+      helper = new SpotLightHelper(light);
+    }
+    
+    if (helper) {
+      helper.name = light.name + '_helper';
+      this.scene.add(helper);
+      this.lightHelpers.set(light.uuid, helper);
+    }
+  }
+
+  // Update light helper visibility based on light visibility and selection
+  private updateLightHelperSelection(): void {
+    // Update all helpers to match their light's visibility
+    this.lightHelpers.forEach((helper, uuid) => {
+      const light = this.scene.getObjectByProperty('uuid', uuid) as THREE.Light;
+      if (light) {
+        // Helper is visible if light is visible
+        helper.visible = light.visible;
+        
+        // Update helper geometry if needed
+        if (helper instanceof DirectionalLightHelper) {
+          helper.update();
+        } else if (helper instanceof SpotLightHelper) {
+          helper.update();
+        }
+      }
+    });
+  }
+  
+  // Ensure all lights have helpers
+  private ensureAllLightHelpers(): void {
+    this.scene.traverse((obj) => {
+      if (obj instanceof THREE.Light && !(obj instanceof THREE.AmbientLight) && !(obj instanceof THREE.HemisphereLight)) {
+        if (!this.lightHelpers.has(obj.uuid)) {
+          this.createLightHelper(obj);
+        }
+      }
+    });
   }
 
   private updatePropertyPanel(): void {
