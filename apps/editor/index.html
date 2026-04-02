@@ -422,20 +422,20 @@
       display: none !important;
     }
     /* 可见性切换点 */
-    .visibility-dot {
+    .visibility-dot, .tree-visibility {
       width: 8px;
       height: 8px;
       border-radius: 50%;
       cursor: pointer;
       flex-shrink: 0;
     }
-    .visibility-dot.visible {
+    .visibility-dot.visible, .tree-visibility.visible {
       background: #4caf50;
     }
-    .visibility-dot.hidden {
+    .visibility-dot.hidden, .tree-visibility.hidden {
       background: #666;
     }
-    .scene-tree-item:hover .visibility-dot {
+    .scene-tree-item:hover .visibility-dot, .scene-tree-item:hover .tree-visibility {
       opacity: 1;
     }
   </style>
@@ -879,6 +879,6 @@
   <input type="file" id="file-input" accept=".json" style="display:none">
   <input type="file" id="model-input" accept=".gltf,.glb,.obj,.fbx" style="display:none">
   
-  <script type="module" src="/src/main.ts"></script>
+  <script type="module" src="/assets/index-MM8DF49S.js"></script>
 </body>
 </html>
