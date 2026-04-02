@@ -147,6 +147,10 @@ export class PostProcessingManager {
       try {
         this.ssaoPass = new SSAOPass(this.scene, this.camera, size.x, size.y);
         this.ssaoPass.enabled = false;
+        // Set conservative defaults to avoid artifacts
+        this.ssaoPass.kernelRadius = 16;
+        this.ssaoPass.minDistance = 0.005;
+        this.ssaoPass.maxDistance = 0.1;
         this.composer.addPass(this.ssaoPass);
       } catch (e) {
         console.warn('[PostProcessing] SSAO pass failed:', e);
@@ -451,7 +455,10 @@ export class PostProcessingManager {
       const saved = localStorage.getItem('editor-pp-settings');
       if (saved) {
         const parsed = JSON.parse(saved);
+        // Merge saved settings but ensure SSAO is disabled by default to avoid artifacts
         this.settings = { ...DEFAULT_SETTINGS, ...parsed };
+        // Always disable SSAO on startup to prevent visual artifacts
+        this.settings.ssaoEnabled = false;
       }
     } catch (e) {
       console.warn('Failed to load post-processing settings:', e);

@@ -62,15 +62,15 @@ export class ResponsiveLayout {
   // Configuration
   private config: Record<PanelSide, PanelConfig> = {
     left: {
-      minWidth: 180,
+      minWidth: 200,
       maxWidth: 500,
-      defaultWidth: 240,
+      defaultWidth: 260,
       collapsedWidth: 48,
     },
     right: {
-      minWidth: 280,
+      minWidth: 300,
       maxWidth: 600,
-      defaultWidth: 320,
+      defaultWidth: 340,
       collapsedWidth: 48,
     },
   };
@@ -292,37 +292,23 @@ export class ResponsiveLayout {
   // -------------------------------------------------------------------------
 
   private handleResize(): void {
-    const width = window.innerWidth;
-
-    // Only auto-collapse on very small screens (< 768px)
-    // For larger screens, respect user's manual settings
-    if (width < 768) {
-      // Mobile: collapse both panels
-      if (!this.leftCollapsed) this.collapsePanel('left', false);
-      if (!this.rightCollapsed) this.collapsePanel('right', false);
-    }
-
-    // Ensure panels don't exceed window width
-    const minViewportWidth = 300; // Minimum viewport width (reduced)
-    const totalMinWidth = this.config.left.minWidth + this.config.right.minWidth + minViewportWidth;
+    // NOTE: Panel widths are now fixed and won't auto-adjust on window resize
+    // Users can manually resize panels using the sash handles (⋮⋮)
+    // or reset layout with Shift+R
     
-    // If window is too small for all panels + viewport, proportionally reduce
-    if (width < totalMinWidth && !this.leftCollapsed && !this.rightCollapsed) {
-      const availableWidth = width - minViewportWidth;
-      const ratio = this.config.left.minWidth / (this.config.left.minWidth + this.config.right.minWidth);
-      this.leftWidth = Math.max(160, availableWidth * ratio);
-      this.rightWidth = Math.max(200, availableWidth * (1 - ratio));
-      this.applyLayout();
-    } else if (this.leftWidth + this.rightWidth > width - minViewportWidth && !this.leftCollapsed && !this.rightCollapsed) {
-      // Normal case: panels too wide for current window
-      const maxPanelWidth = width - minViewportWidth;
-      const ratio = this.leftWidth / (this.leftWidth + this.rightWidth);
-      this.leftWidth = Math.max(this.config.left.minWidth, maxPanelWidth * ratio);
-      this.rightWidth = Math.max(this.config.right.minWidth, maxPanelWidth * (1 - ratio));
-      this.applyLayout();
+    // Only ensure panels don't exceed window bounds when absolutely necessary
+    const width = window.innerWidth;
+    const totalPanelWidth = (this.leftCollapsed ? 48 : this.leftWidth) + 
+                           (this.rightCollapsed ? 48 : this.rightWidth);
+    
+    // If window is smaller than total panels + minimum viewport, warn but don't auto-adjust
+    // Let the user handle it with scroll or manual collapse
+    if (totalPanelWidth + 200 > width) {
+      console.warn('[ResponsiveLayout] Window too small for current panel widths. Use Shift+R to reset.');
     }
-
-    this.saveState();
+    
+    // Just notify about layout change for viewport resize
+    this.callbacks.onLayoutChange?.();
   }
 
   setupGlobalEvents(): void {
