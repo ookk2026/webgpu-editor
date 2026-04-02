@@ -52,10 +52,13 @@ export class ViewportManager {
   private raycaster = new THREE.Raycaster();
   private callbacks: ViewportCallbacks;
 
+  // Selection
+  private selectedObject: THREE.Object3D | null = null;
+  private selectedCamera: THREE.Camera | null = null;
+
   // Camera visuals
   private cameraVisuals = new Map<string, THREE.Object3D>();
   private cameraHelpers = new Map<string, THREE.CameraHelper>();
-  private selectedCamera: THREE.Camera | null = null;
 
   // Animation
   private isCameraAnimating = false;
@@ -227,6 +230,7 @@ export class ViewportManager {
   // -------------------------------------------------------------------------
 
   attachObject(obj: THREE.Object3D | null): void {
+    this.selectedObject = obj;
     if (!this.transformControls) return;
 
     // Hide all camera helpers first
@@ -396,6 +400,10 @@ export class ViewportManager {
 
   getTransformControls(): TransformControls | null {
     return this.transformControls;
+  }
+
+  getSelectedObject(): THREE.Object3D | null {
+    return this.selectedObject;
   }
 
   isTransformDragging(): boolean {
