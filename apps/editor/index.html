@@ -58,48 +58,68 @@
     #toolbar button.primary:hover {
       background: #1177bb;
     }
+    #toolbar button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
     #toolbar .separator {
       width: 1px;
       height: 20px;
-      background: #444;
-      margin: 0 8px;
+      background: #333;
+      margin: 0 4px;
     }
-    /* 主布局 */
-    #main {
+    /* 主工作区 */
+    #workspace {
       flex: 1;
       display: flex;
       overflow: hidden;
     }
-    /* 左侧面板 */
-    #left-panel {
-      width: 240px;
+    /* 左侧面板 - 场景层级 */
+    #scene-panel {
+      width: 220px;
       background: #252526;
       border-right: 1px solid #333;
       display: flex;
       flex-direction: column;
     }
-    .panel-header {
-      height: 32px;
-      background: #2d2d2d;
-      display: flex;
-      align-items: center;
-      padding: 0 12px;
-      font-weight: 500;
-      font-size: 12px;
+    #scene-panel-header {
+      padding: 8px 12px;
+      background: #2d2d30;
       border-bottom: 1px solid #333;
+      font-weight: 500;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
-    .panel-content {
-      flex: 1;
-      overflow: auto;
+    #scene-filter {
+      padding: 8px;
+      border-bottom: 1px solid #333;
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
     }
-    /* 场景图树 */
+    .filter-btn {
+      padding: 4px 8px;
+      background: #3c3c3c;
+      color: #e0e0e0;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 11px;
+    }
+    .filter-btn.active {
+      background: #0e639c;
+    }
     #scene-tree {
+      flex: 1;
+      overflow-y: auto;
       padding: 8px;
     }
     .scene-tree-item {
       padding: 4px 8px;
       cursor: pointer;
       border-radius: 3px;
+      margin-bottom: 2px;
       display: flex;
       align-items: center;
       gap: 6px;
@@ -108,243 +128,39 @@
       background: #2a2d2e;
     }
     .scene-tree-item.selected {
-      background: #094771;
+      background: #0e639c;
     }
-    .scene-tree-item .tree-icon {
+    .scene-tree-item .icon {
       width: 16px;
-      height: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-      opacity: 0.8;
-    }
-    .scene-tree-item .tree-name {
-      flex: 1;
-      font-size: 13px;
-      color: #e0e0e0;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .scene-tree-item .tree-visibility {
-      margin-left: auto;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #666;
-      cursor: pointer;
-      transition: all 0.2s;
-      flex-shrink: 0;
-    }
-    .scene-tree-item .tree-visibility:hover {
-      transform: scale(1.3);
-    }
-    .scene-tree-item .tree-visibility.visible {
-      background: #4caf50;
-      box-shadow: 0 0 4px #4caf50;
-    }
-    .scene-tree-item .tree-visibility.hidden {
-      background: #666;
-      opacity: 0.3;
-    }
-    .scene-tree-item .expand-icon {
-      width: 16px;
-      height: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      font-size: 10px;
-      transition: transform 0.2s;
-    }
-    .scene-tree-item .expand-icon.collapsed {
-      transform: rotate(-90deg);
-    }
-    .scene-tree-item .expand-icon.no-children {
-      opacity: 0;
-      pointer-events: none;
-    }
-    /* 筛选按钮激活状态 */
-    .tree-actions button.active {
-      background: #094771 !important;
-      color: #fff !important;
-    }
-    .tree-actions button:hover {
-      background: #4c4c4c;
-    }
-    .tree-children {
-      overflow: hidden;
-      transition: max-height 0.2s ease-out;
-    }
-    .tree-children.collapsed {
-      max-height: 0;
-    }
-    .dropdown-menu {
-      display: none;
-    }
-    .dropdown-menu.show {
-      display: block;
-    }
-    .dropdown-item {
-      display: block;
-      width: 100%;
-      padding: 8px 12px;
-      background: transparent;
-      border: none;
-      color: #e0e0e0;
-      text-align: left;
-      cursor: pointer;
-      font-size: 12px;
-      white-space: nowrap;
-    }
-    .dropdown-item:hover {
-      background: #4c4c4c;
-    }
-    .dropdown-item:first-child {
-      border-radius: 4px 4px 0 0;
-    }
-    .dropdown-item:last-child {
-      border-radius: 0 0 4px 4px;
+      text-align: center;
     }
     /* 中间视口 */
     #viewport-container {
       flex: 1;
-      display: flex;
-      flex-direction: column;
-      background: #1e1e1e;
       position: relative;
-    }
-    /* 浮动工具栏基础样式 - 可拖动、无边框 */
-    .floating-toolbar {
-      position: absolute;
-      display: flex;
-      gap: 2px;
-      padding: 6px;
-      background: rgba(37, 37, 38, 0.95);
-      border-radius: 8px;
-      backdrop-filter: blur(10px);
-      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-      z-index: 100;
-      cursor: grab;
-      user-select: none;
-    }
-    .floating-toolbar.dragging {
-      cursor: grabbing;
-    }
-    .floating-toolbar.vertical {
-      flex-direction: column;
-    }
-    .floating-toolbar .toolbar-divider {
-      width: 1px;
-      background: rgba(255,255,255,0.1);
-      margin: 0 2px;
-    }
-    .floating-toolbar.vertical .toolbar-divider {
-      width: auto;
-      height: 1px;
-      margin: 2px 0;
-    }
-    .floating-toolbar button {
-      width: 32px;
-      height: 32px;
-      background: transparent;
-      border: none;
-      color: #e0e0e0;
-      cursor: pointer;
-      border-radius: 6px;
-      font-size: 14px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.2s ease;
-      padding: 0;
-    }
-    .floating-toolbar button:hover,
-    .floating-toolbar button.active {
-      background: rgba(255,255,255,0.1);
-    }
-    .floating-toolbar button svg {
-      width: 18px;
-      height: 18px;
-      fill: none;
-      stroke: #e0e0e0;
-      stroke-width: 1.5;
-    }
-    .floating-toolbar button:hover svg {
-      stroke: #fff;
-    }
-    /* 左侧工具栏 - 筛选和展开按钮 */
-    #left-toolbar {
-      display: flex;
-      gap: 6px;
-      padding: 8px 12px;
-      background: #2d2d2d;
-      border-bottom: 1px solid #333;
-    }
-    #left-toolbar button {
-      width: 28px;
-      height: 28px;
-      background: #3c3c3c;
-      border: 1px solid #555;
-      border-radius: 4px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.2s ease;
-      padding: 0;
-    }
-    #left-toolbar button:hover {
-      background: #4c4c4c;
-      border-color: #666;
-    }
-    #left-toolbar button:active {
-      background: #094771;
-      border-color: #007acc;
-    }
-    #left-toolbar button.active {
-      background: #094771;
-      border-color: #007acc;
-    }
-    #left-toolbar svg {
-      width: 16px;
-      height: 16px;
-      fill: none;
-      stroke: #e0e0e0;
-      stroke-width: 1.5;
-    }
-    #left-toolbar button:hover svg {
-      stroke: #fff;
-    }
-    #left-toolbar .toolbar-divider {
-      width: 1px;
-      height: 20px;
-      background: #444;
-      margin: 4px 2px;
+      background: #1e1e1e;
     }
     #viewport {
-      flex: 1;
-      position: relative;
+      width: 100%;
+      height: 100%;
     }
     #viewport canvas {
-      width: 100% !important;
-      height: 100% !important;
+      display: block;
     }
-    /* 视口工具栏 */
-    #viewport-toolbar {
+    /* 变换控制工具栏 */
+    #transform-toolbar {
       position: absolute;
-      top: 10px;
+      top: 12px;
       left: 50%;
       transform: translateX(-50%);
+      background: #252526;
+      border-radius: 6px;
+      padding: 4px;
       display: flex;
       gap: 4px;
-      padding: 4px;
-      background: rgba(37, 37, 38, 0.9);
-      border-radius: 6px;
-      backdrop-filter: blur(10px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
     }
-    #viewport-toolbar button {
+    #transform-toolbar button {
       width: 32px;
       height: 32px;
       background: transparent;
@@ -354,45 +170,50 @@
       border-radius: 4px;
       font-size: 14px;
     }
-    #viewport-toolbar button:hover,
-    #viewport-toolbar button.active {
+    #transform-toolbar button:hover {
       background: #3c3c3c;
     }
-    /* 右侧属性面板 */
-    #right-panel {
+    #transform-toolbar button.active {
+      background: #0e639c;
+    }
+    /* 右侧面板 - 属性 */
+    #properties-panel {
       width: 280px;
       background: #252526;
       border-left: 1px solid #333;
       display: flex;
       flex-direction: column;
     }
-    /* 属性表单 */
-    .property-group {
+    #properties-header {
+      padding: 8px 12px;
+      background: #2d2d30;
       border-bottom: 1px solid #333;
+      font-weight: 500;
+    }
+    #properties-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+    }
+    .property-group {
+      margin-bottom: 16px;
     }
     .property-group-header {
-      height: 28px;
-      background: #2d2d2d;
-      display: flex;
-      align-items: center;
-      padding: 0 12px;
-      cursor: pointer;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: #bbb;
-    }
-    .property-group-content {
-      padding: 12px;
+      padding: 8px 0;
+      font-weight: 500;
+      color: #cccccc;
+      border-bottom: 1px solid #333;
+      margin-bottom: 8px;
     }
     .property-row {
       display: flex;
       align-items: center;
       margin-bottom: 8px;
+      gap: 8px;
     }
     .property-label {
-      width: 70px;
-      color: #aaa;
+      width: 60px;
+      color: #aaaaaa;
       font-size: 12px;
     }
     .property-input {
@@ -401,224 +222,33 @@
       gap: 4px;
     }
     .property-input input {
-      width: 0;
       flex: 1;
       padding: 4px 8px;
       background: #3c3c3c;
       border: 1px solid #444;
+      color: #e0e0e0;
       border-radius: 3px;
-      color: #e0e0e0;
       font-size: 12px;
     }
-    .property-input input:focus {
-      outline: none;
-      border-color: #0e639c;
-    }
-    /* 面板标签 */
-    .panel-tabs {
-      display: flex;
-      background: #2d2d2d;
-      border-bottom: 1px solid #333;
-    }
-    .panel-tab {
-      flex: 1;
-      padding: 8px 12px;
-      text-align: center;
-      cursor: pointer;
-      font-size: 12px;
-      color: #aaa;
-      transition: all 0.2s;
-      border-bottom: 2px solid transparent;
-    }
-    .panel-tab:hover {
-      background: #3c3c3c;
-      color: #e0e0e0;
-    }
-    .panel-tab.active {
-      color: #e0e0e0;
-      border-bottom-color: #0e639c;
-      background: #252526;
-    }
-    /* 后处理面板 */
-    #postprocessing-panel {
-      display: none;
-    }
-    #postprocessing-panel.active {
-      display: block;
-    }
-    .pp-section {
-      border-bottom: 1px solid #333;
-      padding: 12px;
-    }
-    .pp-section-header {
-      font-size: 12px;
-      font-weight: 600;
-      color: #e0e0e0;
-      margin-bottom: 12px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .pp-row {
-      display: flex;
-      align-items: center;
-      margin-bottom: 10px;
-      gap: 8px;
-    }
-    .pp-row:last-child {
-      margin-bottom: 0;
-    }
-    .pp-label {
-      width: 70px;
-      font-size: 12px;
-      color: #aaa;
-      flex-shrink: 0;
-    }
-    .pp-input {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .pp-input input[type="range"] {
-      flex: 1;
-      height: 4px;
-      -webkit-appearance: none;
-      background: #444;
-      border-radius: 2px;
-      outline: none;
-    }
-    .pp-input input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 14px;
-      height: 14px;
-      background: #0e639c;
-      border-radius: 50%;
-      cursor: pointer;
-    }
-    .pp-input input[type="number"] {
-      width: 55px;
-      padding: 4px 6px;
-      background: #3c3c3c;
-      border: 1px solid #444;
-      border-radius: 3px;
-      color: #e0e0e0;
-      font-size: 11px;
-    }
-    .pp-input input[type="color"] {
-      width: 100%;
-      height: 28px;
-      border: none;
-      border-radius: 3px;
-      cursor: pointer;
-    }
-    .pp-input select {
-      flex: 1;
-      padding: 5px 8px;
-      background: #3c3c3c;
-      border: 1px solid #444;
-      border-radius: 3px;
-      color: #e0e0e0;
-      font-size: 12px;
-      cursor: pointer;
-    }
-    .pp-input select:focus {
-      outline: none;
-      border-color: #0e639c;
-    }
-    .pp-toggle {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      cursor: pointer;
-    }
-    .pp-toggle input[type="checkbox"] {
-      width: 36px;
-      height: 18px;
-      -webkit-appearance: none;
-      background: #444;
-      border-radius: 9px;
-      position: relative;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    .pp-toggle input[type="checkbox"]:checked {
-      background: #0e639c;
-    }
-    .pp-toggle input[type="checkbox"]::after {
-      content: '';
-      position: absolute;
-      width: 14px;
-      height: 14px;
-      background: #fff;
-      border-radius: 50%;
-      top: 2px;
-      left: 2px;
-      transition: transform 0.2s;
-    }
-    .pp-toggle input[type="checkbox"]:checked::after {
-      transform: translateX(18px);
-    }
-    .pp-file-input {
-      display: none;
-    }
-    .pp-file-btn {
-      padding: 5px 10px;
-      background: #3c3c3c;
-      border: 1px solid #444;
-      border-radius: 3px;
-      color: #e0e0e0;
-      font-size: 12px;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .pp-file-btn:hover {
-      background: #4c4c4c;
-      border-color: #666;
-    }
-    .pp-file-name {
-      font-size: 11px;
-      color: #888;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 120px;
-    }
-    .pp-loading {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 11px;
-      color: #0e639c;
-    }
-    .pp-loading.hidden {
-      display: none;
-    }
-    .pp-spinner {
-      width: 14px;
-      height: 14px;
-      border: 2px solid rgba(14, 99, 156, 0.3);
-      border-top-color: #0e639c;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
+    .property-input input[type="number"] {
+      width: 60px;
     }
     /* 底部状态栏 */
     #statusbar {
       height: 24px;
-      background: #007acc;
+      background: #0e639c;
+      color: white;
       display: flex;
       align-items: center;
       padding: 0 12px;
-      font-size: 12px;
-      color: white;
+      gap: 16px;
+      font-size: 11px;
     }
-    #statusbar .status-item {
-      margin-right: 20px;
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
     }
-    /* 加载/错误提示 */
     #overlay {
       position: fixed;
       inset: 0;
@@ -626,7 +256,7 @@
       align-items: center;
       justify-content: center;
       background: rgba(0, 0, 0, 0.8);
-      z-index: 1000;
+      z-index: 9999;
     }
     #overlay.hidden {
       display: none;
@@ -641,7 +271,7 @@
     .spinner {
       width: 40px;
       height: 40px;
-      border: 3px solid rgba(255,255,255,0.3);
+      border: 3px solid rgba(255, 255, 255, 0.3);
       border-top-color: white;
       border-radius: 50%;
       animation: spin 1s linear infinite;
@@ -649,6 +279,164 @@
     }
     @keyframes spin {
       to { transform: rotate(360deg); }
+    }
+    /* 场景树操作按钮 */
+    .tree-actions {
+      display: flex;
+      gap: 4px;
+    }
+    .tree-actions button {
+      padding: 2px 6px;
+      font-size: 11px;
+      background: #3c3c3c;
+      border: none;
+      border-radius: 3px;
+      color: #e0e0e0;
+      cursor: pointer;
+    }
+    /* 可折叠层级 */
+    .tree-item-children {
+      margin-left: 16px;
+    }
+    .tree-toggle {
+      width: 12px;
+      text-align: center;
+      cursor: pointer;
+      user-select: none;
+    }
+    /* 面板标签页 */
+    .panel-tabs {
+      display: flex;
+      border-bottom: 1px solid #333;
+    }
+    .panel-tab {
+      flex: 1;
+      padding: 8px;
+      background: #2d2d30;
+      border: none;
+      color: #e0e0e0;
+      cursor: pointer;
+      font-size: 12px;
+      text-align: center;
+    }
+    .panel-tab:hover {
+      background: #3c3c3c;
+    }
+    .panel-tab.active {
+      background: #0e639c;
+    }
+    #properties, #postprocessing-panel {
+      display: none;
+    }
+    #properties.active, #postprocessing-panel.active {
+      display: block;
+    }
+    /* 后处理面板样式 */
+    .pp-section {
+      margin-bottom: 16px;
+      border-bottom: 1px solid #333;
+      padding-bottom: 12px;
+    }
+    .pp-section:last-child {
+      border-bottom: none;
+    }
+    .pp-title {
+      font-weight: 500;
+      color: #cccccc;
+      margin-bottom: 8px;
+      font-size: 12px;
+    }
+    .pp-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+      gap: 8px;
+    }
+    .pp-label {
+      width: 80px;
+      color: #aaaaaa;
+      font-size: 11px;
+    }
+    .pp-input {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .pp-input input[type="range"] {
+      flex: 1;
+    }
+    .pp-input input[type="number"] {
+      width: 60px;
+      padding: 4px;
+      background: #3c3c3c;
+      border: 1px solid #444;
+      color: #e0e0e0;
+      border-radius: 3px;
+      font-size: 11px;
+    }
+    .pp-input select {
+      flex: 1;
+      padding: 4px;
+      background: #3c3c3c;
+      border: 1px solid #444;
+      color: #e0e0e0;
+      border-radius: 3px;
+      font-size: 11px;
+    }
+    .pp-file-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .pp-file-btn {
+      padding: 4px 12px;
+      background: #0e639c;
+      border: none;
+      border-radius: 3px;
+      color: white;
+      cursor: pointer;
+      font-size: 11px;
+    }
+    .pp-file-btn:hover {
+      background: #1177bb;
+    }
+    .pp-filename {
+      color: #888;
+      font-size: 11px;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .pp-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+    .pp-checkbox input[type="checkbox"] {
+      width: auto;
+    }
+    .hidden {
+      display: none !important;
+    }
+    /* 可见性切换点 */
+    .visibility-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .visibility-dot.visible {
+      background: #4caf50;
+    }
+    .visibility-dot.hidden {
+      background: #666;
+    }
+    .scene-tree-item:hover .visibility-dot {
+      opacity: 1;
     }
   </style>
 </head>
@@ -668,170 +456,91 @@
       </div>
       <div class="separator"></div>
       <div class="btn-group">
-        <button id="btn-add-cube" class="primary">+ 立方体</button>
-        <button id="btn-add-sphere" class="primary">+ 球体</button>
+        <button id="btn-add-cube">+ 立方体</button>
+        <button id="btn-add-sphere">+ 球体</button>
         <button id="btn-import-model" class="primary">📁 导入模型</button>
       </div>
-      <div style="flex:1"></div>
+      <div class="separator"></div>
       <div class="btn-group">
-        <button id="btn-play">▶ 播放</button>
-        <button id="btn-publish">发布</button>
+        <button id="btn-add-ambient">+ 环境光</button>
+        <button id="btn-add-directional">+ 平行光</button>
+        <button id="btn-add-point">+ 点光源</button>
       </div>
     </div>
 
-    <!-- 主区域 -->
-    <div id="main">
-      <!-- 左侧面板：场景图 -->
-      <div id="left-panel">
-        <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
+    <!-- 主工作区 -->
+    <div id="workspace">
+      <!-- 左侧场景面板 -->
+      <div id="scene-panel">
+        <div id="scene-panel-header">
           <span>场景层级</span>
+          <div class="tree-actions">
+            <button id="btn-expand-all">展开</button>
+            <button id="btn-collapse-all">折叠</button>
+          </div>
         </div>
-        <!-- 左侧工具栏 - 筛选和展开/收起按钮 -->
-        <div id="left-toolbar">
-          <button id="btn-filter-lights" title="显示/隐藏灯光">
-            <svg viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="4"/>
-              <line x1="12" y1="4" x2="12" y2="2"/>
-              <line x1="12" y1="20" x2="12" y2="22"/>
-              <line x1="4" y1="12" x2="2" y2="12"/>
-              <line x1="20" y1="12" x2="22" y2="12"/>
-            </svg>
-          </button>
-          <button id="btn-filter-models" title="显示/隐藏模型">
-            <svg viewBox="0 0 24 24">
-              <rect x="4" y="4" width="16" height="16" rx="2"/>
-              <rect x="7" y="7" width="10" height="10" rx="1" opacity="0.5"/>
-            </svg>
-          </button>
-          <button id="btn-filter-helpers" title="显示/隐藏辅助物体">
-            <svg viewBox="0 0 24 24">
-              <line x1="4" y1="4" x2="4" y2="20"/>
-              <line x1="4" y1="4" x2="20" y2="4"/>
-              <line x1="4" y1="20" x2="20" y2="20"/>
-              <line x1="20" y1="4" x2="20" y2="20"/>
-              <line x1="4" y1="12" x2="20" y2="12"/>
-              <line x1="12" y1="4" x2="12" y2="20"/>
-            </svg>
-          </button>
-          <button id="btn-filter-cameras" title="显示/隐藏摄像机">
-            <svg viewBox="0 0 24 24">
-              <rect x="3" y="6" width="16" height="12" rx="2"/>
-              <circle cx="11" cy="12" r="3"/>
-              <path d="M19 9l3-2v10l-3-2"/>
-            </svg>
-          </button>
-          <div class="toolbar-divider"></div>
-          <button id="btn-expand-all" title="展开全部">
-            <svg viewBox="0 0 24 24">
-              <polyline points="6 9 12 15 18 9"/>
-            </svg>
-          </button>
-          <button id="btn-collapse-all" title="收起全部">
-            <svg viewBox="0 0 24 24">
-              <polyline points="9 18 15 12 9 6"/>
-            </svg>
-          </button>
+        <div id="scene-filter">
+          <button class="filter-btn active" id="btn-filter-lights">灯光</button>
+          <button class="filter-btn active" id="btn-filter-models">模型</button>
+          <button class="filter-btn active" id="btn-filter-cameras">摄像机</button>
+          <button class="filter-btn active" id="btn-filter-helpers">辅助</button>
         </div>
-        <div class="panel-content">
-          <div id="scene-tree"></div>
-        </div>
+        <div id="scene-tree"></div>
       </div>
 
       <!-- 中间视口 -->
       <div id="viewport-container">
         <div id="viewport"></div>
-        <!-- 浮动工具栏 1 - 变换工具（顶部，水平） -->
-        <!-- 浮动工具栏 1 - 变换工具（顶部，水平） -->
-        <div id="viewport-toolbar" class="floating-toolbar" style="left: 50%; top: 12px; transform: translateX(-50%);">
-          <button id="tool-translate" class="active" title="移动 (T)">↔</button>
+        <div id="transform-toolbar">
+          <button id="tool-translate" title="移动 (T)">↔</button>
           <button id="tool-rotate" title="旋转 (R)">↻</button>
           <button id="tool-scale" title="缩放 (S)">⤢</button>
-          <button id="tool-local" title="本地/世界坐标">⊕</button>
-          <div class="toolbar-divider"></div>
-          <button id="btn-toggle-grid" class="active" title="显示/隐藏网格">⊞</button>
+          <div class="separator" style="margin: 0 4px;"></div>
+          <button id="tool-local" title="局部/世界坐标">⊡</button>
+          <button id="tool-snap" title="网格吸附">▣</button>
         </div>
-        
-        <!-- 浮动工具栏 2 - 灯光创建（左侧，垂直） -->
-        <div id="viewport-left-toolbar" class="floating-toolbar vertical" style="left: 12px; top: 50%; transform: translateY(-50%);">
-          <button id="btn-add-ambient" title="环境光">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <circle cx="12" cy="12" r="4"/>
-              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
-            </svg>
-          </button>
-          <button id="btn-add-directional" title="方向光">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <circle cx="12" cy="12" r="4"/>
-              <line x1="12" y1="4" x2="12" y2="2"/>
-              <line x1="12" y1="20" x2="12" y2="22"/>
-              <line x1="4" y1="12" x2="2" y2="12"/>
-              <line x1="20" y1="12" x2="22" y2="12"/>
-              <line x1="6.34" y1="6.34" x2="4.93" y2="4.93"/>
-              <line x1="17.66" y1="17.66" x2="19.07" y2="19.07"/>
-              <line x1="6.34" y1="17.66" x2="4.93" y2="19.07"/>
-              <line x1="17.66" y1="6.34" x2="19.07" y2="4.93"/>
-            </svg>
-          </button>
-          <button id="btn-add-point" title="点光源">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <circle cx="12" cy="12" r="5"/>
-              <circle cx="12" cy="12" r="2" fill="currentColor"/>
-            </svg>
-          </button>
-          <button id="btn-add-spot" title="聚光灯">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M12 6L8 20h8L12 6z"/>
-              <ellipse cx="12" cy="20" rx="4" ry="1"/>
-            </svg>
-          </button>
-          <button id="btn-add-hemisphere" title="半球光">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M4 14c0-4.4 3.6-8 8-8s8 3.6 8 8"/>
-              <line x1="4" y1="14" x2="20" y2="14"/>
-            </svg>
-          </button>
-        </div>
-
-
       </div>
 
-      <!-- 右侧面板：属性 -->
-      <div id="right-panel">
+      <!-- 右侧属性面板 -->
+      <div id="properties-panel">
         <div class="panel-tabs">
-          <div class="panel-tab active" data-tab="properties">属性</div>
-          <div class="panel-tab" data-tab="postprocessing">后处理</div>
+          <button class="panel-tab active" data-tab="properties">属性</button>
+          <button class="panel-tab" data-tab="postprocessing">后处理</button>
         </div>
-        <div class="panel-content" id="properties">
-          <div id="no-selection" style="padding: 20px; text-align: center; color: #666;">
-            选择一个对象以编辑属性
-          </div>
-          <div id="transform-properties" style="display: none;">
-            <!-- 变换属性 -->
-            <div class="property-group">
-              <div class="property-group-header">变换 (Transform)</div>
-              <div class="property-group-content">
-                <div class="property-row">
-                  <span class="property-label">位置</span>
-                  <div class="property-input">
-                    <input type="number" id="pos-x" placeholder="X" step="0.1">
-                    <input type="number" id="pos-y" placeholder="Y" step="0.1">
-                    <input type="number" id="pos-z" placeholder="Z" step="0.1">
+        
+        <div id="properties" class="active">
+          <div id="properties-content">
+            <div id="no-selection" style="color: #888; text-align: center; padding: 40px 20px;">
+              选择一个对象以编辑属性
+            </div>
+            
+            <div id="transform-properties" style="display: none;">
+              <div class="property-group">
+                <div class="property-group-header">变换 (Transform)</div>
+                <div class="property-group-content">
+                  <div class="property-row">
+                    <span class="property-label">位置</span>
+                    <div class="property-input">
+                      <input type="number" id="pos-x" placeholder="X" step="0.1">
+                      <input type="number" id="pos-y" placeholder="Y" step="0.1">
+                      <input type="number" id="pos-z" placeholder="Z" step="0.1">
+                    </div>
                   </div>
-                </div>
-                <div class="property-row">
-                  <span class="property-label">旋转</span>
-                  <div class="property-input">
-                    <input type="number" id="rot-x" placeholder="X" step="1">
-                    <input type="number" id="rot-y" placeholder="Y" step="1">
-                    <input type="number" id="rot-z" placeholder="Z" step="1">
+                  <div class="property-row">
+                    <span class="property-label">旋转</span>
+                    <div class="property-input">
+                      <input type="number" id="rot-x" placeholder="X" step="1">
+                      <input type="number" id="rot-y" placeholder="Y" step="1">
+                      <input type="number" id="rot-z" placeholder="Z" step="1">
+                    </div>
                   </div>
-                </div>
-                <div class="property-row">
-                  <span class="property-label">缩放</span>
-                  <div class="property-input">
-                    <input type="number" id="scale-x" placeholder="X" step="0.1">
-                    <input type="number" id="scale-y" placeholder="Y" step="0.1">
-                    <input type="number" id="scale-z" placeholder="Z" step="0.1">
+                  <div class="property-row">
+                    <span class="property-label">缩放</span>
+                    <div class="property-input">
+                      <input type="number" id="scale-x" placeholder="X" step="0.1" value="1">
+                      <input type="number" id="scale-y" placeholder="Y" step="0.1" value="1">
+                      <input type="number" id="scale-z" placeholder="Z" step="0.1" value="1">
+                    </div>
                   </div>
                 </div>
               </div>
@@ -842,15 +551,9 @@
               <div class="property-group-header">灯光 (Light)</div>
               <div class="property-group-content">
                 <div class="property-row">
-                  <span class="property-label">开关</span>
+                  <span class="property-label">类型</span>
                   <div class="property-input">
-                    <input type="checkbox" id="light-enabled" checked style="width: auto;">
-                  </div>
-                </div>
-                <div class="property-row">
-                  <span class="property-label">辅助线</span>
-                  <div class="property-input">
-                    <input type="checkbox" id="light-helper" checked style="width: auto;">
+                    <span id="light-type" style="color: #e0e0e0;">-</span>
                   </div>
                 </div>
                 <div class="property-row">
@@ -862,49 +565,36 @@
                 <div class="property-row">
                   <span class="property-label">强度</span>
                   <div class="property-input" style="align-items: center;">
-                    <input type="range" id="light-intensity-slider" min="0" max="5" step="0.1" value="1" style="flex: 1;">
+                    <input type="range" id="light-intensity-slider" min="0" max="10" step="0.1" value="1" style="flex: 1;">
                     <input type="number" id="light-intensity" min="0" max="10" step="0.1" value="1" style="width: 60px;">
                   </div>
                 </div>
-                <div class="property-row" id="light-distance-row" style="display: none;">
+                <div class="property-row" id="light-distance-row">
                   <span class="property-label">距离</span>
                   <div class="property-input" style="align-items: center;">
-                    <input type="range" id="light-distance-slider" min="0" max="100" step="1" value="100" style="flex: 1;">
-                    <input type="number" id="light-distance" min="0" step="1" value="100" style="width: 60px;">
+                    <input type="range" id="light-distance-slider" min="0" max="100" step="1" value="10" style="flex: 1;">
+                    <input type="number" id="light-distance" min="0" max="100" step="1" value="10" style="width: 60px;">
                   </div>
                 </div>
-                <div class="property-row" id="light-angle-row" style="display: none;">
+                <div class="property-row" id="light-angle-row">
                   <span class="property-label">角度</span>
                   <div class="property-input" style="align-items: center;">
                     <input type="range" id="light-angle-slider" min="0" max="90" step="1" value="45" style="flex: 1;">
                     <input type="number" id="light-angle" min="0" max="90" step="1" value="45" style="width: 60px;">
                   </div>
                 </div>
-                <div class="property-row" id="light-penumbra-row" style="display: none;">
+                <div class="property-row" id="light-penumbra-row">
                   <span class="property-label">半影</span>
                   <div class="property-input" style="align-items: center;">
                     <input type="range" id="light-penumbra-slider" min="0" max="1" step="0.01" value="0" style="flex: 1;">
                     <input type="number" id="light-penumbra" min="0" max="1" step="0.01" value="0" style="width: 60px;">
                   </div>
                 </div>
-                <div class="property-row" id="light-decay-row" style="display: none;">
+                <div class="property-row" id="light-decay-row">
                   <span class="property-label">衰减</span>
                   <div class="property-input" style="align-items: center;">
-                    <input type="range" id="light-decay-slider" min="0" max="2" step="0.1" value="2" style="flex: 1;">
-                    <input type="number" id="light-decay" min="0" max="2" step="0.1" value="2" style="width: 60px;">
-                  </div>
-                </div>
-                <div class="property-row">
-                  <span class="property-label">投射阴影</span>
-                  <div class="property-input">
-                    <input type="checkbox" id="light-cast-shadow" checked style="width: auto;">
-                  </div>
-                </div>
-                <div class="property-row" id="light-shadow-bias-row">
-                  <span class="property-label">阴影偏移</span>
-                  <div class="property-input" style="align-items: center;">
-                    <input type="range" id="light-shadow-bias-slider" min="-0.01" max="0.01" step="0.0001" value="-0.0005" style="flex: 1;">
-                    <input type="number" id="light-shadow-bias" min="-0.01" max="0.01" step="0.0001" value="-0.0005" style="width: 70px; font-size: 10px;">
+                    <input type="range" id="light-decay-slider" min="0" max="2" step="0.1" value="1" style="flex: 1;">
+                    <input type="number" id="light-decay" min="0" max="2" step="0.1" value="1" style="width: 60px;">
                   </div>
                 </div>
               </div>
@@ -915,59 +605,23 @@
               <div class="property-group-header">材质 (Material)</div>
               <div class="property-group-content">
                 <div class="property-row">
-                  <span class="property-label">类型</span>
-                  <div class="property-input">
-                    <select id="material-type" style="flex: 1; padding: 4px; background: #3c3c3c; border: 1px solid #444; color: #e0e0e0; border-radius: 3px;">
-                      <option value="MeshStandard">标准材质</option>
-                      <option value="MeshPhysical">物理材质</option>
-                      <option value="MeshBasic">基础材质</option>
-                    </select>
-                  </div>
-                </div>
-                <div class="property-row">
                   <span class="property-label">颜色</span>
                   <div class="property-input">
                     <input type="color" id="material-color" style="flex: 1; height: 28px; cursor: pointer;">
                   </div>
                 </div>
                 <div class="property-row">
-                  <span class="property-label">自发光</span>
-                  <div class="property-input">
-                    <input type="color" id="material-emissive" style="flex: 1; height: 28px; cursor: pointer;">
-                  </div>
-                </div>
-                <div class="property-row" id="material-roughness-row">
                   <span class="property-label">粗糙度</span>
                   <div class="property-input" style="align-items: center;">
                     <input type="range" id="material-roughness-slider" min="0" max="1" step="0.01" value="0.5" style="flex: 1;">
                     <input type="number" id="material-roughness" min="0" max="1" step="0.01" value="0.5" style="width: 60px;">
                   </div>
                 </div>
-                <div class="property-row" id="material-metalness-row">
+                <div class="property-row">
                   <span class="property-label">金属度</span>
                   <div class="property-input" style="align-items: center;">
                     <input type="range" id="material-metalness-slider" min="0" max="1" step="0.01" value="0" style="flex: 1;">
                     <input type="number" id="material-metalness" min="0" max="1" step="0.01" value="0" style="width: 60px;">
-                  </div>
-                </div>
-                <div class="property-row" id="material-clearcoat-row" style="display: none;">
-                  <span class="property-label">清漆层</span>
-                  <div class="property-input" style="align-items: center;">
-                    <input type="range" id="material-clearcoat-slider" min="0" max="1" step="0.01" value="0" style="flex: 1;">
-                    <input type="number" id="material-clearcoat" min="0" max="1" step="0.01" value="0" style="width: 60px;">
-                  </div>
-                </div>
-                <div class="property-row">
-                  <span class="property-label">不透明度</span>
-                  <div class="property-input" style="align-items: center;">
-                    <input type="range" id="material-opacity-slider" min="0" max="1" step="0.01" value="1" style="flex: 1;">
-                    <input type="number" id="material-opacity" min="0" max="1" step="0.01" value="1" style="width: 60px;">
-                  </div>
-                </div>
-                <div class="property-row">
-                  <span class="property-label">透明</span>
-                  <div class="property-input">
-                    <input type="checkbox" id="material-transparent" style="width: auto;">
                   </div>
                 </div>
                 <div class="property-row">
@@ -977,13 +631,10 @@
                   </div>
                 </div>
                 <div class="property-row">
-                  <span class="property-label">渲染面</span>
-                  <div class="property-input">
-                    <select id="material-side" style="flex: 1; padding: 4px; background: #3c3c3c; border: 1px solid #444; color: #e0e0e0; border-radius: 3px;">
-                      <option value="front">正面</option>
-                      <option value="back">背面</option>
-                      <option value="double">双面</option>
-                    </select>
+                  <span class="property-label">不透明度</span>
+                  <div class="property-input" style="align-items: center;">
+                    <input type="range" id="material-opacity-slider" min="0" max="1" step="0.01" value="1" style="flex: 1;">
+                    <input type="number" id="material-opacity" min="0" max="1" step="0.01" value="1" style="width: 60px;">
                   </div>
                 </div>
               </div>
@@ -993,12 +644,6 @@
             <div class="property-group" id="camera-properties" style="display: none;">
               <div class="property-group-header">摄像机 (Camera)</div>
               <div class="property-group-content">
-                <div class="property-row">
-                  <span class="property-label">类型</span>
-                  <div class="property-input">
-                    <span id="camera-type" style="color: #e0e0e0;">透视相机</span>
-                  </div>
-                </div>
                 <div class="property-row">
                   <span class="property-label">FOV</span>
                   <div class="property-input">
@@ -1036,281 +681,176 @@
         </div>
         
         <!-- 后处理面板 -->
-        <div class="panel-content" id="postprocessing-panel">
-          <!-- 环境光照 -->
-          <div class="pp-section">
-            <div class="pp-section-header">🌤 环境光照 (Environment)</div>
-            <div class="pp-row">
-              <span class="pp-label">启用 HDR</span>
-              <div class="pp-input">
-                <label class="pp-toggle">
-                  <input type="checkbox" id="pp-hdr-enabled">
-                </label>
+        <div id="postprocessing-panel">
+          <div id="postprocessing-content">
+            <!-- HDR Environment -->
+            <div class="pp-section">
+              <div class="pp-title">环境光照 (Environment)</div>
+              <div class="pp-checkbox">
+                <input type="checkbox" id="pp-hdr-enabled">
+                <label for="pp-hdr-enabled">启用 HDR 环境</label>
               </div>
-            </div>
-            <div class="pp-row">
-              <span class="pp-label">加载 HDR</span>
-              <div class="pp-input">
+              <div class="pp-file-row" style="margin-top: 8px;">
                 <button class="pp-file-btn" id="pp-hdr-load-btn">选择文件</button>
-                <span class="pp-file-name" id="pp-hdr-filename">未选择</span>
-                <input type="file" id="pp-hdr-input" class="pp-file-input" accept=".hdr,.jpg,.png,.exr">
+                <span class="pp-filename" id="pp-hdr-filename">未选择文件</span>
+                <input type="file" id="pp-hdr-input" accept=".hdr,.exr,.jpg,.png" style="display: none;">
+              </div>
+              <div class="pp-row">
+                <span class="pp-label">环境强度</span>
+                <div class="pp-input">
+                  <input type="range" id="pp-hdr-intensity-slider" min="0" max="5" step="0.1" value="1">
+                  <input type="number" id="pp-hdr-intensity" min="0" max="5" step="0.1" value="1">
+                </div>
+              </div>
+              <div id="pp-hdr-loading" class="hidden" style="color: #888; font-size: 11px; margin-top: 4px;">
+                加载中...
               </div>
             </div>
-            <div class="pp-row">
-              <span class="pp-label"></span>
-              <div class="pp-input">
-                <div class="pp-loading hidden" id="pp-hdr-loading">
-                  <div class="pp-spinner"></div>
-                  <span>加载中...</span>
+            
+            <!-- Background -->
+            <div class="pp-section">
+              <div class="pp-title">背景 (Background)</div>
+              <div class="pp-row">
+                <span class="pp-label">类型</span>
+                <div class="pp-input">
+                  <select id="pp-bg-type">
+                    <option value="color">纯色</option>
+                    <option value="gradient">渐变</option>
+                    <option value="hdr">HDR</option>
+                    <option value="transparent">透明</option>
+                  </select>
+                </div>
+              </div>
+              <div class="pp-row" id="pp-bg-color-row">
+                <span class="pp-label">背景颜色</span>
+                <div class="pp-input">
+                  <input type="color" id="pp-bg-color" value="#1e1e1e">
+                </div>
+              </div>
+              <div class="pp-row hidden" id="pp-bg-intensity-row">
+                <span class="pp-label">背景强度</span>
+                <div class="pp-input">
+                  <input type="range" id="pp-bg-intensity-slider" min="0" max="5" step="0.1" value="1">
+                  <input type="number" id="pp-bg-intensity" min="0" max="5" step="0.1" value="1">
                 </div>
               </div>
             </div>
-            <div class="pp-row">
-              <span class="pp-label">强度</span>
-              <div class="pp-input">
-                <input type="range" id="pp-hdr-intensity-slider" min="0" max="5" step="0.1" value="1">
-                <input type="number" id="pp-hdr-intensity" min="0" max="5" step="0.1" value="1">
+            
+            <!-- Bloom -->
+            <div class="pp-section">
+              <div class="pp-title">泛光 (Bloom)</div>
+              <div class="pp-checkbox">
+                <input type="checkbox" id="pp-bloom-enabled">
+                <label for="pp-bloom-enabled">启用泛光</label>
               </div>
-            </div>
-          </div>
-          
-          <!-- 背景 -->
-          <div class="pp-section">
-            <div class="pp-section-header">🎨 背景 (Background)</div>
-            <div class="pp-row">
-              <span class="pp-label">类型</span>
-              <div class="pp-input">
-                <select id="pp-bg-type">
-                  <option value="color">颜色</option>
-                  <option value="gradient">渐变</option>
-                  <option value="hdr">HDR</option>
-                  <option value="transparent">透明</option>
-                </select>
-              </div>
-            </div>
-            <div class="pp-row" id="pp-bg-color-row">
-              <span class="pp-label">颜色</span>
-              <div class="pp-input">
-                <input type="color" id="pp-bg-color" value="#1e1e1e">
-              </div>
-            </div>
-            <div class="pp-row" id="pp-bg-intensity-row" style="display: none;">
-              <span class="pp-label">强度</span>
-              <div class="pp-input">
-                <input type="range" id="pp-bg-intensity-slider" min="0" max="3" step="0.1" value="1">
-                <input type="number" id="pp-bg-intensity" min="0" max="3" step="0.1" value="1">
-              </div>
-            </div>
-          </div>
-          
-          <!-- 辉光 -->
-          <div class="pp-section">
-            <div class="pp-section-header">✨ 辉光 (Bloom)</div>
-            <div class="pp-row">
-              <span class="pp-label">启用</span>
-              <div class="pp-input">
-                <label class="pp-toggle">
-                  <input type="checkbox" id="pp-bloom-enabled">
-                </label>
-              </div>
-            </div>
-            <div class="pp-row">
-              <span class="pp-label">阈值</span>
-              <div class="pp-input">
-                <input type="range" id="pp-bloom-threshold-slider" min="0" max="1" step="0.01" value="0.85">
-                <input type="number" id="pp-bloom-threshold" min="0" max="1" step="0.01" value="0.85">
-              </div>
-            </div>
-            <div class="pp-row">
-              <span class="pp-label">强度</span>
-              <div class="pp-input">
-                <input type="range" id="pp-bloom-strength-slider" min="0" max="3" step="0.1" value="0.5">
-                <input type="number" id="pp-bloom-strength" min="0" max="3" step="0.1" value="0.5">
-              </div>
-            </div>
-            <div class="pp-row">
-              <span class="pp-label">半径</span>
-              <div class="pp-input">
-                <input type="range" id="pp-bloom-radius-slider" min="0" max="1" step="0.01" value="0.5">
-                <input type="number" id="pp-bloom-radius" min="0" max="1" step="0.01" value="0.5">
-              </div>
-            </div>
-          </div>
-          
-          <!-- 环境光遮蔽 -->
-          <div class="pp-section">
-            <div class="pp-section-header">🖼 环境光遮蔽 (SSAO)</div>
-            <div class="pp-row">
-              <span class="pp-label">启用</span>
-              <div class="pp-input">
-                <label class="pp-toggle">
-                  <input type="checkbox" id="pp-ssao-enabled">
-                </label>
-              </div>
-            </div>
-            <div class="pp-row">
-              <span class="pp-label">核半径</span>
-              <div class="pp-input">
-                <input type="range" id="pp-ssao-radius-slider" min="0" max="32" step="1" value="16">
-                <input type="number" id="pp-ssao-radius" min="0" max="32" step="1" value="16">
-              </div>
-            </div>
-            <div class="pp-row">
-              <span class="pp-label">最大距离</span>
-              <div class="pp-input">
-                <input type="range" id="pp-ssao-intensity-slider" min="0.001" max="0.5" step="0.001" value="0.1">
-                <input type="number" id="pp-ssao-intensity" min="0.001" max="0.5" step="0.001" value="0.1">
-              </div>
-            </div>
-          </div>
-          
-          <!-- 色调映射 -->
-          <div class="pp-section">
-            <div class="pp-section-header">🎭 色调映射 (Tone Mapping)</div>
-            <div class="pp-row">
-              <span class="pp-label">启用</span>
-              <div class="pp-input">
-                <label class="pp-toggle">
-                  <input type="checkbox" id="pp-tone-enabled">
-                </label>
-              </div>
-            </div>
-            <div class="pp-row">
-              <span class="pp-label">类型</span>
-              <div class="pp-input">
-                <select id="pp-tone-type">
-                  <option value="Linear">Linear</option>
-                  <option value="Reinhard">Reinhard</option>
-                  <option value="Cineon">Cineon</option>
-                  <option value="ACESFilmic">ACESFilmic</option>
-                </select>
-              </div>
-            </div>
-            <div class="pp-row">
-              <span class="pp-label">曝光</span>
-              <div class="pp-input">
-                <input type="range" id="pp-tone-exposure-slider" min="0" max="3" step="0.1" value="1">
-                <input type="number" id="pp-tone-exposure" min="0" max="3" step="0.1" value="1">
-              </div>
-            </div>
-          </div>
-          
-          <!-- 抗锯齿 -->
-          <div class="pp-section">
-            <div class="pp-section-header">🖇 抗锯齿 (FXAA)</div>
-            <div class="pp-row">
-              <span class="pp-label">启用</span>
-              <div class="pp-input">
-                <label class="pp-toggle">
-                  <input type="checkbox" id="pp-fxaa-enabled">
-                </label>
-              </div>
-            </div>
-          </div>
-          
-          <!-- Gamma校正 -->
-          <div class="pp-section">
-            <div class="pp-section-header">⚡ Gamma校正</div>
-            <div class="pp-row">
-              <span class="pp-label">启用</span>
-              <div class="pp-input">
-                <label class="pp-toggle">
-                  <input type="checkbox" id="pp-gamma-enabled" checked>
-                </label>
-              </div>
-            </div>
-          </div>
-          
-          <!-- 颜色调整 -->
-          <div class="pp-section">
-            <div class="pp-section-header">🎨 颜色调整 (Color Grading)</div>
-            <div class="pp-row">
-              <span class="pp-label">亮度</span>
-              <div class="pp-input">
-                <input type="range" id="pp-color-brightness-slider" min="-1" max="1" step="0.05" value="0">
-                <input type="number" id="pp-color-brightness" min="-1" max="1" step="0.05" value="0">
-              </div>
-            </div>
-            <div class="pp-row">
-              <span class="pp-label">对比度</span>
-              <div class="pp-input">
-                <input type="range" id="pp-color-contrast-slider" min="-1" max="1" step="0.05" value="0">
-                <input type="number" id="pp-color-contrast" min="-1" max="1" step="0.05" value="0">
-              </div>
-            </div>
-            <div class="pp-row">
-              <span class="pp-label">饱和度</span>
-              <div class="pp-input">
-                <input type="range" id="pp-color-saturation-slider" min="0" max="2" step="0.05" value="1">
-                <input type="number" id="pp-color-saturation" min="0" max="2" step="0.05" value="1">
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 状态栏 -->
-    <div id="statusbar">
-      <span class="status-item" id="status-mode">就绪</span>
-      <span class="status-item" id="status-objects">0 个对象</span>
-      <span class="status-item" id="status-render">WebGPU</span>
-      <span class="status-item" id="status-fps">-- FPS</span>
-    </div>
-  </div>
-
-  <!-- 加载遮罩 -->
-  <div id="overlay">
-    <div id="overlay-content">
-      <div class="spinner"></div>
-      <div>初始化编辑器...</div>
-    </div>
-  </div>
-
-  <input type="file" id="file-input" accept=".json" style="display:none">
-  <input type="file" id="model-input" accept=".gltf,.glb,.obj,.fbx" style="display:none">
-  
-  <script type="module" src="/src/main.ts"></script>
-</body>
-</html>
-              <div class="property-group-header">摄像机 (Camera)</div>
-              <div class="property-group-content">
-                <div class="property-row">
-                  <span class="property-label">类型</span>
-                  <div class="property-input">
-                    <span id="camera-type" style="color: #e0e0e0;">透视相机</span>
-                  </div>
+              <div class="pp-row">
+                <span class="pp-label">阈值</span>
+                <div class="pp-input">
+                  <input type="range" id="pp-bloom-threshold-slider" min="0" max="1" step="0.01" value="0.85">
+                  <input type="number" id="pp-bloom-threshold" min="0" max="1" step="0.01" value="0.85">
                 </div>
-                <div class="property-row">
-                  <span class="property-label">FOV</span>
-                  <div class="property-input">
-                    <input type="number" id="camera-fov" style="flex: 1; width: 60px; padding: 4px; background: #3c3c3c; border: 1px solid #444; color: #e0e0e0; border-radius: 3px;" step="1" min="1" max="180">
-                    <input type="range" id="camera-fov-slider" style="flex: 2; margin-left: 8px;" min="1" max="180" step="1">
-                  </div>
+              </div>
+              <div class="pp-row">
+                <span class="pp-label">强度</span>
+                <div class="pp-input">
+                  <input type="range" id="pp-bloom-strength-slider" min="0" max="3" step="0.1" value="0.5">
+                  <input type="number" id="pp-bloom-strength" min="0" max="3" step="0.1" value="0.5">
                 </div>
-                <div class="property-row">
-                  <span class="property-label">近裁剪面</span>
-                  <div class="property-input">
-                    <input type="number" id="camera-near" style="flex: 1; width: 60px; padding: 4px; background: #3c3c3c; border: 1px solid #444; color: #e0e0e0; border-radius: 3px;" step="0.01" min="0.001">
-                  </div>
+              </div>
+              <div class="pp-row">
+                <span class="pp-label">半径</span>
+                <div class="pp-input">
+                  <input type="range" id="pp-bloom-radius-slider" min="0" max="1" step="0.01" value="0.5">
+                  <input type="number" id="pp-bloom-radius" min="0" max="1" step="0.01" value="0.5">
                 </div>
-                <div class="property-row">
-                  <span class="property-label">远裁剪面</span>
-                  <div class="property-input">
-                    <input type="number" id="camera-far" style="flex: 1; width: 60px; padding: 4px; background: #3c3c3c; border: 1px solid #444; color: #e0e0e0; border-radius: 3px;" step="0.1" min="0.1">
-                  </div>
+              </div>
+            </div>
+            
+            <!-- SSAO -->
+            <div class="pp-section">
+              <div class="pp-title">环境光遮蔽 (SSAO)</div>
+              <div class="pp-checkbox">
+                <input type="checkbox" id="pp-ssao-enabled">
+                <label for="pp-ssao-enabled">启用 SSAO</label>
+              </div>
+              <div class="pp-row">
+                <span class="pp-label">采样半径</span>
+                <div class="pp-input">
+                  <input type="range" id="pp-ssao-radius-slider" min="0" max="32" step="1" value="16">
+                  <input type="number" id="pp-ssao-radius" min="0" max="32" step="1" value="16">
                 </div>
-                <div class="property-row">
-                  <span class="property-label">宽高比</span>
-                  <div class="property-input">
-                    <span id="camera-aspect" style="color: #888;">自动</span>
-                  </div>
+              </div>
+              <div class="pp-row">
+                <span class="pp-label">最大距离</span>
+                <div class="pp-input">
+                  <input type="range" id="pp-ssao-intensity-slider" min="0" max="1" step="0.01" value="0.1">
+                  <input type="number" id="pp-ssao-intensity" min="0" max="1" step="0.01" value="0.1">
                 </div>
-                <div class="property-row">
-                  <span class="property-label">辅助线</span>
-                  <div class="property-input">
-                    <input type="checkbox" id="camera-helper-toggle" checked>
-                  </div>
+              </div>
+            </div>
+            
+            <!-- Tone Mapping -->
+            <div class="pp-section">
+              <div class="pp-title">色调映射 (Tone Mapping)</div>
+              <div class="pp-checkbox">
+                <input type="checkbox" id="pp-tone-enabled">
+                <label for="pp-tone-enabled">启用色调映射</label>
+              </div>
+              <div class="pp-row">
+                <span class="pp-label">类型</span>
+                <div class="pp-input">
+                  <select id="pp-tone-type">
+                    <option value="Linear">线性</option>
+                    <option value="Reinhard">Reinhard</option>
+                    <option value="Cineon">Cineon</option>
+                    <option value="ACESFilmic">ACES Filmic</option>
+                  </select>
+                </div>
+              </div>
+              <div class="pp-row">
+                <span class="pp-label">曝光</span>
+                <div class="pp-input">
+                  <input type="range" id="pp-tone-exposure-slider" min="0" max="3" step="0.1" value="1">
+                  <input type="number" id="pp-tone-exposure" min="0" max="3" step="0.1" value="1">
+                </div>
+              </div>
+            </div>
+            
+            <!-- FXAA -->
+            <div class="pp-section">
+              <div class="pp-title">抗锯齿</div>
+              <div class="pp-checkbox">
+                <input type="checkbox" id="pp-fxaa-enabled">
+                <label for="pp-fxaa-enabled">启用 FXAA</label>
+              </div>
+              <div class="pp-checkbox" style="margin-top: 8px;">
+                <input type="checkbox" id="pp-gamma-enabled" checked>
+                <label for="pp-gamma-enabled">Gamma 校正</label>
+              </div>
+            </div>
+            
+            <!-- Color Grading -->
+            <div class="pp-section">
+              <div class="pp-title">色彩调整</div>
+              <div class="pp-row">
+                <span class="pp-label">亮度</span>
+                <div class="pp-input">
+                  <input type="range" id="pp-color-brightness-slider" min="-1" max="1" step="0.05" value="0">
+                  <input type="number" id="pp-color-brightness" min="-1" max="1" step="0.05" value="0">
+                </div>
+              </div>
+              <div class="pp-row">
+                <span class="pp-label">对比度</span>
+                <div class="pp-input">
+                  <input type="range" id="pp-color-contrast-slider" min="-1" max="1" step="0.05" value="0">
+                  <input type="number" id="pp-color-contrast" min="-1" max="1" step="0.05" value="0">
+                </div>
+              </div>
+              <div class="pp-row">
+                <span class="pp-label">饱和度</span>
+                <div class="pp-input">
+                  <input type="range" id="pp-color-saturation-slider" min="0" max="2" step="0.05" value="1">
+                  <input type="number" id="pp-color-saturation" min="0" max="2" step="0.05" value="1">
                 </div>
               </div>
             </div>

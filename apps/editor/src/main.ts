@@ -176,12 +176,19 @@ class PostProcessingManager {
   private settings: PostProcessingSettings = { ...DEFAULT_PP_SETTINGS };
   private hdrTexture: THREE.Texture | null = null;
   private pmremGenerator: THREE.PMREMGenerator | null = null;
+  private rendererRef: THREE.WebGLRenderer;
+  private sceneRef: THREE.Scene;
+  private cameraRef: THREE.PerspectiveCamera;
   
   constructor(
-    private renderer: THREE.WebGLRenderer,
-    private scene: THREE.Scene,
-    private camera: THREE.PerspectiveCamera
+    renderer: THREE.WebGLRenderer,
+    scene: THREE.Scene,
+    camera: THREE.PerspectiveCamera
   ) {
+    this.rendererRef = renderer;
+    this.sceneRef = scene;
+    this.cameraRef = camera;
+    
     try {
       this.loadSettings();
       this.initComposer();
@@ -193,7 +200,7 @@ class PostProcessingManager {
 
   private setupPMREMGenerator(): void {
     try {
-      this.pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+      this.pmremGenerator = new THREE.PMREMGenerator(this.rendererRef);
       this.pmremGenerator.compileEquirectangularShader();
     } catch (e) {
       console.error('[PostProcessingManager] PMREMGenerator setup failed:', e);
@@ -202,70 +209,99 @@ class PostProcessingManager {
 
   private initComposer(): void {
     try {
-      const size = this.renderer.getSize(new THREE.Vector2());
-      this.composer = new EffectComposer(this.renderer);
+      const size = this.rendererRef.getSize(new THREE.Vector2());
+      this.composer = new EffectComposer(this.rendererRef);
       
       // Render pass
-      this.renderPass = new RenderPass(this.scene, this.camera);
+      this.renderPass = new RenderPass(this.sceneRef, this.cameraRef);
       this.composer.addPass(this.renderPass);
       
       // SSAO pass (must be added early to work with depth)
-      this.ssaoPass = new SSAOPass(this.scene, this.camera, size.x, size.y);
-      this.ssaoPass.enabled = false;
-      this.composer.addPass(this.ssaoPass);
+      try {
+        this.ssaoPass = new SSAOPass(this.sceneRef, this.cameraRef, size.x, size.y);
+        this.ssaoPass.enabled = false;
+        this.composer.addPass(this.ssaoPass);
+      } catch (e) {
+        console.warn('[PostProcessing] SSAO pass failed:', e);
+      }
       
       // Bloom pass
-      this.bloomPass = new UnrealBloomPass(
-        new THREE.Vector2(size.x, size.y),
-        this.settings.bloomStrength,
-        this.settings.bloomRadius,
-        this.settings.bloomThreshold
-      );
-      this.bloomPass.enabled = false;
-      this.composer.addPass(this.bloomPass);
+      try {
+        this.bloomPass = new UnrealBloomPass(
+          new THREE.Vector2(size.x, size.y),
+          this.settings.bloomStrength,
+          this.settings.bloomRadius,
+          this.settings.bloomThreshold
+        );
+        this.bloomPass.enabled = false;
+        this.composer.addPass(this.bloomPass);
+      } catch (e) {
+        console.warn('[PostProcessing] Bloom pass failed:', e);
+      }
       
       // Brightness/Contrast pass
-      this.brightnessPass = new ShaderPass(BrightnessContrastShader);
-      if (this.brightnessPass.uniforms['brightness']) {
-        this.brightnessPass.uniforms['brightness'].value = this.settings.brightness;
+      try {
+        this.brightnessPass = new ShaderPass(BrightnessContrastShader);
+        if (this.brightnessPass.uniforms['brightness']) {
+          this.brightnessPass.uniforms['brightness'].value = this.settings.brightness;
+        }
+        if (this.brightnessPass.uniforms['contrast']) {
+          this.brightnessPass.uniforms['contrast'].value = this.settings.contrast;
+        }
+        this.brightnessPass.enabled = false;
+        this.composer.addPass(this.brightnessPass);
+      } catch (e) {
+        console.warn('[PostProcessing] Brightness pass failed:', e);
       }
-      if (this.brightnessPass.uniforms['contrast']) {
-        this.brightnessPass.uniforms['contrast'].value = this.settings.contrast;
-      }
-      this.brightnessPass.enabled = false;
-      this.composer.addPass(this.brightnessPass);
       
       // Hue/Saturation pass
-      this.huePass = new ShaderPass(HueSaturationShader);
-      if (this.huePass.uniforms['saturation']) {
-        this.huePass.uniforms['saturation'].value = this.settings.saturation;
+      try {
+        this.huePass = new ShaderPass(HueSaturationShader);
+        if (this.huePass.uniforms['saturation']) {
+          this.huePass.uniforms['saturation'].value = this.settings.saturation;
+        }
+        this.huePass.enabled = false;
+        this.composer.addPass(this.huePass);
+      } catch (e) {
+        console.warn('[PostProcessing] Hue pass failed:', e);
       }
-      this.huePass.enabled = false;
-      this.composer.addPass(this.huePass);
       
       // FXAA pass
-      this.fxaaPass = new ShaderPass(FXAAShader);
-      const pixelRatio = this.renderer.getPixelRatio();
-      if (this.fxaaPass.material.uniforms['resolution']) {
-        this.fxaaPass.material.uniforms['resolution'].value.x = 1 / (size.x * pixelRatio);
-        this.fxaaPass.material.uniforms['resolution'].value.y = 1 / (size.y * pixelRatio);
+      try {
+        this.fxaaPass = new ShaderPass(FXAAShader);
+        const pixelRatio = this.rendererRef.getPixelRatio();
+        if (this.fxaaPass.material.uniforms['resolution']) {
+          this.fxaaPass.material.uniforms['resolution'].value.x = 1 / (size.x * pixelRatio);
+          this.fxaaPass.material.uniforms['resolution'].value.y = 1 / (size.y * pixelRatio);
+        }
+        this.fxaaPass.enabled = false;
+        this.composer.addPass(this.fxaaPass);
+      } catch (e) {
+        console.warn('[PostProcessing] FXAA pass failed:', e);
       }
-      this.fxaaPass.enabled = false;
-      this.composer.addPass(this.fxaaPass);
       
       // Gamma correction pass
-      this.gammaPass = new ShaderPass(GammaCorrectionShader);
-      this.gammaPass.enabled = false;
-      this.composer.addPass(this.gammaPass);
+      try {
+        this.gammaPass = new ShaderPass(GammaCorrectionShader);
+        this.gammaPass.enabled = false;
+        this.composer.addPass(this.gammaPass);
+      } catch (e) {
+        console.warn('[PostProcessing] Gamma pass failed:', e);
+      }
       
       // Output pass (includes tone mapping)
-      this.tonePass = new OutputPass();
-      this.tonePass.enabled = false;
-      this.composer.addPass(this.tonePass);
+      try {
+        this.tonePass = new OutputPass();
+        this.tonePass.enabled = false;
+        this.composer.addPass(this.tonePass);
+      } catch (e) {
+        console.warn('[PostProcessing] Tone pass failed:', e);
+      }
       
       this.updatePasses();
     } catch (e) {
       console.error('[Editor] Post-processing init failed:', e);
+      this.composer = null;
     }
   }
 
@@ -280,7 +316,7 @@ class PostProcessingManager {
       this.ssaoPass.setSize(width, height);
     }
     if (this.fxaaPass) {
-      const pixelRatio = this.renderer.getPixelRatio();
+      const pixelRatio = this.rendererRef.getPixelRatio();
       this.fxaaPass.material.uniforms['resolution'].value.x = 1 / (width * pixelRatio);
       this.fxaaPass.material.uniforms['resolution'].value.y = 1 / (height * pixelRatio);
     }
@@ -290,7 +326,7 @@ class PostProcessingManager {
     if (this.settings.enabled && this.composer) {
       this.composer.render();
     } else {
-      this.renderer.render(this.scene, this.camera);
+      this.rendererRef.render(this.sceneRef, this.cameraRef);
     }
   }
 
@@ -377,22 +413,22 @@ class PostProcessingManager {
     if (this.settings.toneEnabled) {
       switch (this.settings.toneType) {
         case 'Linear':
-          this.renderer.toneMapping = THREE.LinearToneMapping;
+          this.rendererRef.toneMapping = THREE.LinearToneMapping;
           break;
         case 'Reinhard':
-          this.renderer.toneMapping = THREE.ReinhardToneMapping;
+          this.rendererRef.toneMapping = THREE.ReinhardToneMapping;
           break;
         case 'Cineon':
-          this.renderer.toneMapping = THREE.CineonToneMapping;
+          this.rendererRef.toneMapping = THREE.CineonToneMapping;
           break;
         case 'ACESFilmic':
-          this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+          this.rendererRef.toneMapping = THREE.ACESFilmicToneMapping;
           break;
       }
     } else {
-      this.renderer.toneMapping = THREE.NoToneMapping;
+      this.rendererRef.toneMapping = THREE.NoToneMapping;
     }
-    this.renderer.toneMappingExposure = this.settings.toneExposure;
+    this.rendererRef.toneMappingExposure = this.settings.toneExposure;
   }
 
   loadHDR(url: string, filename: string, onLoad?: () => void, onError?: (error: any) => void): void {
@@ -410,23 +446,23 @@ class PostProcessingManager {
   updateHDREnvironment(): void {
     if (this.settings.hdrEnabled && this.hdrTexture && this.pmremGenerator) {
       const pmremTexture = this.pmremGenerator.fromEquirectangular(this.hdrTexture).texture;
-      this.scene.environment = pmremTexture;
+      this.sceneRef.environment = pmremTexture;
       // environmentIntensity is handled via material.envMapIntensity on each material
-      this.scene.traverse((obj) => {
+      this.sceneRef.traverse((obj) => {
         if (obj instanceof THREE.Mesh && obj.material) {
           const mat = obj.material as THREE.MeshStandardMaterial;
           mat.envMapIntensity = this.settings.hdrIntensity;
         }
       });
     } else {
-      this.scene.environment = null;
+      this.sceneRef.environment = null;
     }
   }
 
   updateBackground(): void {
     switch (this.settings.bgType) {
       case 'color':
-        this.scene.background = new THREE.Color(this.settings.bgColor);
+        this.sceneRef.background = new THREE.Color(this.settings.bgColor);
         break;
       case 'gradient':
         // Create gradient texture
@@ -440,19 +476,19 @@ class PostProcessingManager {
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, 512, 512);
         const gradientTexture = new THREE.CanvasTexture(canvas);
-        this.scene.background = gradientTexture;
+        this.sceneRef.background = gradientTexture;
         break;
       case 'hdr':
         if (this.hdrTexture) {
-          this.scene.background = this.hdrTexture;
-          this.scene.backgroundIntensity = this.settings.bgIntensity;
-          this.scene.backgroundBlurriness = 0;
+          this.sceneRef.background = this.hdrTexture;
+          (this.sceneRef as any).backgroundIntensity = this.settings.bgIntensity;
+          (this.sceneRef as any).backgroundBlurriness = 0;
         } else {
-          this.scene.background = new THREE.Color(this.settings.bgColor);
+          this.sceneRef.background = new THREE.Color(this.settings.bgColor);
         }
         break;
       case 'transparent':
-        this.scene.background = null;
+        this.sceneRef.background = null;
         break;
     }
   }
@@ -538,62 +574,87 @@ export class Editor {
   }
 
   private init(): void {
-    this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x1e1e1e);
-    this.scene.name = 'Scene';
-    this.camera = new THREE.PerspectiveCamera(50, this.viewport.clientWidth / this.viewport.clientHeight, 0.1, 1000);
-    this.camera.position.set(5, 5, 10);
-    this.camera.lookAt(0, 0, 0);
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setSize(this.viewport.clientWidth, this.viewport.clientHeight);
-    this.renderer.setPixelRatio(window.devicePixelRatio);
-    this.viewport.appendChild(this.renderer.domElement);
-    
-    // Initialize post-processing
-    this.postProcessing = new PostProcessingManager(this.renderer, this.scene, this.camera);
-    
-    this.orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.orbitControls.enableDamping = true;
-    this.orbitControls.dampingFactor = 0.05;
-    this.orbitControls.target.set(0, 0, 0);
-    this.transformControls = new TransformControls(this.camera, this.renderer.domElement);
-    this.transformControls.setMode('translate');
-    this.transformControls.setSize(this.gizmoSize);
-    this.scene.add(this.transformControls);
-    this.gridHelper = new THREE.GridHelper(20, 20, 0x444444, 0x333333);
-    this.scene.add(this.gridHelper);
-    // Default ambient light
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-    ambientLight.name = 'Ambient Light';
-    this.scene.add(ambientLight);
-    this.createAmbientVisual(ambientLight);
-    
-    // Default directional light
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-    dirLight.position.set(5, 10, 5);
-    dirLight.name = 'Directional Light';
-    this.scene.add(dirLight);
-    
-    // Add default camera to scene (visible, non-deletable)
-    this.camera.name = 'Main Camera';
-    this.camera.userData.isDefaultCamera = true;
-    this.scene.add(this.camera);
-    this.createCameraVisual(this.camera);
-    
-    document.getElementById('overlay')?.classList.add('hidden');
-    this.ensureAllLightHelpers();
-    
-    // Restore post-processing settings to UI
     try {
-      this.restorePostProcessingUI();
+      this.scene = new THREE.Scene();
+      this.scene.background = new THREE.Color(0x1e1e1e);
+      this.scene.name = 'Scene';
+      this.camera = new THREE.PerspectiveCamera(50, this.viewport.clientWidth / this.viewport.clientHeight, 0.1, 1000);
+      this.camera.position.set(5, 5, 10);
+      this.camera.lookAt(0, 0, 0);
+      this.renderer = new THREE.WebGLRenderer({ antialias: true });
+      this.renderer.setSize(this.viewport.clientWidth, this.viewport.clientHeight);
+      this.renderer.setPixelRatio(window.devicePixelRatio);
+      this.viewport.appendChild(this.renderer.domElement);
+      
+      // Initialize post-processing
+      try {
+        this.postProcessing = new PostProcessingManager(this.renderer, this.scene, this.camera);
+      } catch (e) {
+        console.error('[Editor] PostProcessingManager init failed:', e);
+        this.postProcessing = null as any;
+      }
+      
+      this.orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
+      this.orbitControls.enableDamping = true;
+      this.orbitControls.dampingFactor = 0.05;
+      this.orbitControls.target.set(0, 0, 0);
+      this.transformControls = new TransformControls(this.camera, this.renderer.domElement);
+      this.transformControls.setMode('translate');
+      this.transformControls.setSize(this.gizmoSize);
+      this.scene.add(this.transformControls);
+      this.gridHelper = new THREE.GridHelper(20, 20, 0x444444, 0x333333);
+      this.scene.add(this.gridHelper);
+      // Default ambient light
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+      ambientLight.name = 'Ambient Light';
+      this.scene.add(ambientLight);
+      this.createAmbientVisual(ambientLight);
+      
+      // Default directional light
+      const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+      dirLight.position.set(5, 10, 5);
+      dirLight.name = 'Directional Light';
+      this.scene.add(dirLight);
+      
+      // Add default camera to scene (visible, non-deletable)
+      this.camera.name = 'Main Camera';
+      this.camera.userData.isDefaultCamera = true;
+      this.scene.add(this.camera);
+      this.createCameraVisual(this.camera);
+      
+      // Hide loading overlay - hide all overlays just in case
+      document.querySelectorAll('#overlay').forEach((el, i) => {
+        el.classList.add('hidden');
+        (el as HTMLElement).style.display = 'none';
+        console.log('[Editor] Overlay', i, 'hidden');
+      });
+      
+      this.ensureAllLightHelpers();
+      
+      // Restore post-processing settings to UI
+      try {
+        this.restorePostProcessingUI();
+      } catch (e) {
+        console.error('[Editor] Failed to restore post-processing UI:', e);
+      }
+      
+      // Ensure nothing is selected on startup
+      try {
+        this.selectObject(null);
+        console.log('[Editor] Selection cleared');
+      } catch (e) {
+        console.error('[Editor] Failed to clear selection:', e);
+      }
+      
+      console.log('[Editor] Initialization complete');
     } catch (e) {
-      console.error('[Editor] Failed to restore post-processing UI:', e);
+      console.error('[Editor] CRITICAL INIT ERROR:', e);
+      // Even on error, try to hide the overlay so user can see something
+      document.querySelectorAll('#overlay').forEach(el => {
+        el.classList.add('hidden');
+        (el as HTMLElement).style.display = 'none';
+      });
     }
-    
-    // Ensure nothing is selected on startup
-    this.selectObject(null);
-    
-    console.log('[Editor] Initialized');
   }
 
   private animate(): void {
@@ -607,7 +668,11 @@ export class Editor {
     if (this.isCameraAnimating) this.updateCameraAnimation();
     
     // Use post-processing render
-    this.postProcessing.render();
+    if (this.postProcessing) {
+      this.postProcessing.render();
+    } else if (this.renderer && this.scene && this.camera) {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
   private focusOnObject(obj: THREE.Object3D): void {
@@ -811,7 +876,7 @@ export class Editor {
       this.camera.aspect = w / h; 
       this.camera.updateProjectionMatrix(); 
       this.renderer.setSize(w, h); 
-      this.postProcessing.resize(w, h);
+      this.postProcessing?.resize(w, h);
     });
     document.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -1274,7 +1339,7 @@ export class Editor {
     hdrLoadBtn?.addEventListener('click', () => hdrInput?.click());
     hdrInput?.addEventListener('change', (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
-      if (file) {
+      if (file && this.postProcessing) {
         hdrLoading?.classList.remove('hidden');
         const url = URL.createObjectURL(file);
         this.postProcessing.loadHDR(
@@ -1285,7 +1350,7 @@ export class Editor {
             if (hdrFilename) hdrFilename.textContent = file.name;
             // Enable HDR automatically
             const hdrEnabled = document.getElementById('pp-hdr-enabled') as HTMLInputElement;
-            if (hdrEnabled && !hdrEnabled.checked) {
+            if (hdrEnabled && !hdrEnabled.checked && this.postProcessing) {
               hdrEnabled.checked = true;
               this.postProcessing.updateSettings({ hdrEnabled: true });
             }
@@ -1365,6 +1430,8 @@ export class Editor {
     if (!el) return;
     
     el.addEventListener('input', () => {
+      if (!this.postProcessing) return;
+      
       let value: any;
       if (type === 'checkbox') value = (el as HTMLInputElement).checked;
       else if (type === 'range' || type === 'color') value = parseFloat(el.value);
@@ -1384,6 +1451,7 @@ export class Editor {
   }
   
   private restorePostProcessingUI(): void {
+    if (!this.postProcessing) return;
     const settings = this.postProcessing.getSettings();
     
     // Restore all UI controls from saved settings
