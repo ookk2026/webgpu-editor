@@ -414,6 +414,197 @@
       outline: none;
       border-color: #0e639c;
     }
+    /* 面板标签 */
+    .panel-tabs {
+      display: flex;
+      background: #2d2d2d;
+      border-bottom: 1px solid #333;
+    }
+    .panel-tab {
+      flex: 1;
+      padding: 8px 12px;
+      text-align: center;
+      cursor: pointer;
+      font-size: 12px;
+      color: #aaa;
+      transition: all 0.2s;
+      border-bottom: 2px solid transparent;
+    }
+    .panel-tab:hover {
+      background: #3c3c3c;
+      color: #e0e0e0;
+    }
+    .panel-tab.active {
+      color: #e0e0e0;
+      border-bottom-color: #0e639c;
+      background: #252526;
+    }
+    /* 后处理面板 */
+    #postprocessing-panel {
+      display: none;
+    }
+    #postprocessing-panel.active {
+      display: block;
+    }
+    .pp-section {
+      border-bottom: 1px solid #333;
+      padding: 12px;
+    }
+    .pp-section-header {
+      font-size: 12px;
+      font-weight: 600;
+      color: #e0e0e0;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .pp-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+      gap: 8px;
+    }
+    .pp-row:last-child {
+      margin-bottom: 0;
+    }
+    .pp-label {
+      width: 70px;
+      font-size: 12px;
+      color: #aaa;
+      flex-shrink: 0;
+    }
+    .pp-input {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .pp-input input[type="range"] {
+      flex: 1;
+      height: 4px;
+      -webkit-appearance: none;
+      background: #444;
+      border-radius: 2px;
+      outline: none;
+    }
+    .pp-input input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      background: #0e639c;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+    .pp-input input[type="number"] {
+      width: 55px;
+      padding: 4px 6px;
+      background: #3c3c3c;
+      border: 1px solid #444;
+      border-radius: 3px;
+      color: #e0e0e0;
+      font-size: 11px;
+    }
+    .pp-input input[type="color"] {
+      width: 100%;
+      height: 28px;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .pp-input select {
+      flex: 1;
+      padding: 5px 8px;
+      background: #3c3c3c;
+      border: 1px solid #444;
+      border-radius: 3px;
+      color: #e0e0e0;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .pp-input select:focus {
+      outline: none;
+      border-color: #0e639c;
+    }
+    .pp-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+    .pp-toggle input[type="checkbox"] {
+      width: 36px;
+      height: 18px;
+      -webkit-appearance: none;
+      background: #444;
+      border-radius: 9px;
+      position: relative;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .pp-toggle input[type="checkbox"]:checked {
+      background: #0e639c;
+    }
+    .pp-toggle input[type="checkbox"]::after {
+      content: '';
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      background: #fff;
+      border-radius: 50%;
+      top: 2px;
+      left: 2px;
+      transition: transform 0.2s;
+    }
+    .pp-toggle input[type="checkbox"]:checked::after {
+      transform: translateX(18px);
+    }
+    .pp-file-input {
+      display: none;
+    }
+    .pp-file-btn {
+      padding: 5px 10px;
+      background: #3c3c3c;
+      border: 1px solid #444;
+      border-radius: 3px;
+      color: #e0e0e0;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .pp-file-btn:hover {
+      background: #4c4c4c;
+      border-color: #666;
+    }
+    .pp-file-name {
+      font-size: 11px;
+      color: #888;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 120px;
+    }
+    .pp-loading {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #0e639c;
+    }
+    .pp-loading.hidden {
+      display: none;
+    }
+    .pp-spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(14, 99, 156, 0.3);
+      border-top-color: #0e639c;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
     /* 底部状态栏 */
     #statusbar {
       height: 24px;
@@ -606,7 +797,10 @@
 
       <!-- 右侧面板：属性 -->
       <div id="right-panel">
-        <div class="panel-header">属性</div>
+        <div class="panel-tabs">
+          <div class="panel-tab active" data-tab="properties">属性</div>
+          <div class="panel-tab" data-tab="postprocessing">后处理</div>
+        </div>
         <div class="panel-content" id="properties">
           <div id="no-selection" style="padding: 20px; text-align: center; color: #666;">
             选择一个对象以编辑属性
@@ -797,6 +991,288 @@
             
             <!-- 摄像机属性 -->
             <div class="property-group" id="camera-properties" style="display: none;">
+              <div class="property-group-header">摄像机 (Camera)</div>
+              <div class="property-group-content">
+                <div class="property-row">
+                  <span class="property-label">类型</span>
+                  <div class="property-input">
+                    <span id="camera-type" style="color: #e0e0e0;">透视相机</span>
+                  </div>
+                </div>
+                <div class="property-row">
+                  <span class="property-label">FOV</span>
+                  <div class="property-input">
+                    <input type="number" id="camera-fov" style="flex: 1; width: 60px; padding: 4px; background: #3c3c3c; border: 1px solid #444; color: #e0e0e0; border-radius: 3px;" step="1" min="1" max="180">
+                    <input type="range" id="camera-fov-slider" style="flex: 2; margin-left: 8px;" min="1" max="180" step="1">
+                  </div>
+                </div>
+                <div class="property-row">
+                  <span class="property-label">近裁剪面</span>
+                  <div class="property-input">
+                    <input type="number" id="camera-near" style="flex: 1; width: 60px; padding: 4px; background: #3c3c3c; border: 1px solid #444; color: #e0e0e0; border-radius: 3px;" step="0.01" min="0.001">
+                  </div>
+                </div>
+                <div class="property-row">
+                  <span class="property-label">远裁剪面</span>
+                  <div class="property-input">
+                    <input type="number" id="camera-far" style="flex: 1; width: 60px; padding: 4px; background: #3c3c3c; border: 1px solid #444; color: #e0e0e0; border-radius: 3px;" step="0.1" min="0.1">
+                  </div>
+                </div>
+                <div class="property-row">
+                  <span class="property-label">宽高比</span>
+                  <div class="property-input">
+                    <span id="camera-aspect" style="color: #888;">自动</span>
+                  </div>
+                </div>
+                <div class="property-row">
+                  <span class="property-label">辅助线</span>
+                  <div class="property-input">
+                    <input type="checkbox" id="camera-helper-toggle" checked>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- 后处理面板 -->
+        <div class="panel-content" id="postprocessing-panel">
+          <!-- 环境光照 -->
+          <div class="pp-section">
+            <div class="pp-section-header">🌤 环境光照 (Environment)</div>
+            <div class="pp-row">
+              <span class="pp-label">启用 HDR</span>
+              <div class="pp-input">
+                <label class="pp-toggle">
+                  <input type="checkbox" id="pp-hdr-enabled">
+                </label>
+              </div>
+            </div>
+            <div class="pp-row">
+              <span class="pp-label">加载 HDR</span>
+              <div class="pp-input">
+                <button class="pp-file-btn" id="pp-hdr-load-btn">选择文件</button>
+                <span class="pp-file-name" id="pp-hdr-filename">未选择</span>
+                <input type="file" id="pp-hdr-input" class="pp-file-input" accept=".hdr,.jpg,.png,.exr">
+              </div>
+            </div>
+            <div class="pp-row">
+              <span class="pp-label"></span>
+              <div class="pp-input">
+                <div class="pp-loading hidden" id="pp-hdr-loading">
+                  <div class="pp-spinner"></div>
+                  <span>加载中...</span>
+                </div>
+              </div>
+            </div>
+            <div class="pp-row">
+              <span class="pp-label">强度</span>
+              <div class="pp-input">
+                <input type="range" id="pp-hdr-intensity-slider" min="0" max="5" step="0.1" value="1">
+                <input type="number" id="pp-hdr-intensity" min="0" max="5" step="0.1" value="1">
+              </div>
+            </div>
+          </div>
+          
+          <!-- 背景 -->
+          <div class="pp-section">
+            <div class="pp-section-header">🎨 背景 (Background)</div>
+            <div class="pp-row">
+              <span class="pp-label">类型</span>
+              <div class="pp-input">
+                <select id="pp-bg-type">
+                  <option value="color">颜色</option>
+                  <option value="gradient">渐变</option>
+                  <option value="hdr">HDR</option>
+                  <option value="transparent">透明</option>
+                </select>
+              </div>
+            </div>
+            <div class="pp-row" id="pp-bg-color-row">
+              <span class="pp-label">颜色</span>
+              <div class="pp-input">
+                <input type="color" id="pp-bg-color" value="#1e1e1e">
+              </div>
+            </div>
+            <div class="pp-row" id="pp-bg-intensity-row" style="display: none;">
+              <span class="pp-label">强度</span>
+              <div class="pp-input">
+                <input type="range" id="pp-bg-intensity-slider" min="0" max="3" step="0.1" value="1">
+                <input type="number" id="pp-bg-intensity" min="0" max="3" step="0.1" value="1">
+              </div>
+            </div>
+          </div>
+          
+          <!-- 辉光 -->
+          <div class="pp-section">
+            <div class="pp-section-header">✨ 辉光 (Bloom)</div>
+            <div class="pp-row">
+              <span class="pp-label">启用</span>
+              <div class="pp-input">
+                <label class="pp-toggle">
+                  <input type="checkbox" id="pp-bloom-enabled">
+                </label>
+              </div>
+            </div>
+            <div class="pp-row">
+              <span class="pp-label">阈值</span>
+              <div class="pp-input">
+                <input type="range" id="pp-bloom-threshold-slider" min="0" max="1" step="0.01" value="0.85">
+                <input type="number" id="pp-bloom-threshold" min="0" max="1" step="0.01" value="0.85">
+              </div>
+            </div>
+            <div class="pp-row">
+              <span class="pp-label">强度</span>
+              <div class="pp-input">
+                <input type="range" id="pp-bloom-strength-slider" min="0" max="3" step="0.1" value="0.5">
+                <input type="number" id="pp-bloom-strength" min="0" max="3" step="0.1" value="0.5">
+              </div>
+            </div>
+            <div class="pp-row">
+              <span class="pp-label">半径</span>
+              <div class="pp-input">
+                <input type="range" id="pp-bloom-radius-slider" min="0" max="1" step="0.01" value="0.5">
+                <input type="number" id="pp-bloom-radius" min="0" max="1" step="0.01" value="0.5">
+              </div>
+            </div>
+          </div>
+          
+          <!-- 环境光遮蔽 -->
+          <div class="pp-section">
+            <div class="pp-section-header">🖼 环境光遮蔽 (SSAO)</div>
+            <div class="pp-row">
+              <span class="pp-label">启用</span>
+              <div class="pp-input">
+                <label class="pp-toggle">
+                  <input type="checkbox" id="pp-ssao-enabled">
+                </label>
+              </div>
+            </div>
+            <div class="pp-row">
+              <span class="pp-label">核半径</span>
+              <div class="pp-input">
+                <input type="range" id="pp-ssao-radius-slider" min="0" max="32" step="1" value="16">
+                <input type="number" id="pp-ssao-radius" min="0" max="32" step="1" value="16">
+              </div>
+            </div>
+            <div class="pp-row">
+              <span class="pp-label">最大距离</span>
+              <div class="pp-input">
+                <input type="range" id="pp-ssao-intensity-slider" min="0.001" max="0.5" step="0.001" value="0.1">
+                <input type="number" id="pp-ssao-intensity" min="0.001" max="0.5" step="0.001" value="0.1">
+              </div>
+            </div>
+          </div>
+          
+          <!-- 色调映射 -->
+          <div class="pp-section">
+            <div class="pp-section-header">🎭 色调映射 (Tone Mapping)</div>
+            <div class="pp-row">
+              <span class="pp-label">启用</span>
+              <div class="pp-input">
+                <label class="pp-toggle">
+                  <input type="checkbox" id="pp-tone-enabled">
+                </label>
+              </div>
+            </div>
+            <div class="pp-row">
+              <span class="pp-label">类型</span>
+              <div class="pp-input">
+                <select id="pp-tone-type">
+                  <option value="Linear">Linear</option>
+                  <option value="Reinhard">Reinhard</option>
+                  <option value="Cineon">Cineon</option>
+                  <option value="ACESFilmic">ACESFilmic</option>
+                </select>
+              </div>
+            </div>
+            <div class="pp-row">
+              <span class="pp-label">曝光</span>
+              <div class="pp-input">
+                <input type="range" id="pp-tone-exposure-slider" min="0" max="3" step="0.1" value="1">
+                <input type="number" id="pp-tone-exposure" min="0" max="3" step="0.1" value="1">
+              </div>
+            </div>
+          </div>
+          
+          <!-- 抗锯齿 -->
+          <div class="pp-section">
+            <div class="pp-section-header">🖇 抗锯齿 (FXAA)</div>
+            <div class="pp-row">
+              <span class="pp-label">启用</span>
+              <div class="pp-input">
+                <label class="pp-toggle">
+                  <input type="checkbox" id="pp-fxaa-enabled">
+                </label>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Gamma校正 -->
+          <div class="pp-section">
+            <div class="pp-section-header">⚡ Gamma校正</div>
+            <div class="pp-row">
+              <span class="pp-label">启用</span>
+              <div class="pp-input">
+                <label class="pp-toggle">
+                  <input type="checkbox" id="pp-gamma-enabled" checked>
+                </label>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 颜色调整 -->
+          <div class="pp-section">
+            <div class="pp-section-header">🎨 颜色调整 (Color Grading)</div>
+            <div class="pp-row">
+              <span class="pp-label">亮度</span>
+              <div class="pp-input">
+                <input type="range" id="pp-color-brightness-slider" min="-1" max="1" step="0.05" value="0">
+                <input type="number" id="pp-color-brightness" min="-1" max="1" step="0.05" value="0">
+              </div>
+            </div>
+            <div class="pp-row">
+              <span class="pp-label">对比度</span>
+              <div class="pp-input">
+                <input type="range" id="pp-color-contrast-slider" min="-1" max="1" step="0.05" value="0">
+                <input type="number" id="pp-color-contrast" min="-1" max="1" step="0.05" value="0">
+              </div>
+            </div>
+            <div class="pp-row">
+              <span class="pp-label">饱和度</span>
+              <div class="pp-input">
+                <input type="range" id="pp-color-saturation-slider" min="0" max="2" step="0.05" value="1">
+                <input type="number" id="pp-color-saturation" min="0" max="2" step="0.05" value="1">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 状态栏 -->
+    <div id="statusbar">
+      <span class="status-item" id="status-mode">就绪</span>
+      <span class="status-item" id="status-objects">0 个对象</span>
+      <span class="status-item" id="status-render">WebGPU</span>
+      <span class="status-item" id="status-fps">-- FPS</span>
+    </div>
+  </div>
+
+  <!-- 加载遮罩 -->
+  <div id="overlay">
+    <div id="overlay-content">
+      <div class="spinner"></div>
+      <div>初始化编辑器...</div>
+    </div>
+  </div>
+
+  <input type="file" id="file-input" accept=".json" style="display:none">
+  <input type="file" id="model-input" accept=".gltf,.glb,.obj,.fbx" style="display:none">
+  
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
               <div class="property-group-header">摄像机 (Camera)</div>
               <div class="property-group-content">
                 <div class="property-row">

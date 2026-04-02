@@ -5,6 +5,19 @@ import { DirectionalLightHelper, PointLightHelper, SpotLightHelper } from 'three
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
+
+// Post-processing imports
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
+import { GammaCorrectionShader } from 'three/examples/jsm/shaders/GammaCorrectionShader.js';
+import { BrightnessContrastShader } from 'three/examples/jsm/shaders/BrightnessContrastShader.js';
+import { HueSaturationShader } from 'three/examples/jsm/shaders/HueSaturationShader.js';
 
 interface Command { execute(): void; undo(): void; }
 class AddObjectCommand implements Command {
@@ -88,6 +101,375 @@ class LightChangeCommand implements Command {
 
 type FilterType = 'lights' | 'models' | 'cameras' | 'helpers';
 
+// Post-processing settings interface
+interface PostProcessingSettings {
+  enabled: boolean;
+  // HDR Environment
+  hdrEnabled: boolean;
+  hdrIntensity: number;
+  hdrFilename: string | null;
+  // Background
+  bgType: 'color' | 'gradient' | 'hdr' | 'transparent';
+  bgColor: string;
+  bgIntensity: number;
+  // Bloom
+  bloomEnabled: boolean;
+  bloomThreshold: number;
+  bloomStrength: number;
+  bloomRadius: number;
+  // SSAO
+  ssaoEnabled: boolean;
+  ssaoKernelRadius: number;
+  ssaoMinDistance: number;
+  ssaoMaxDistance: number;
+  // Tone Mapping
+  toneEnabled: boolean;
+  toneType: 'Linear' | 'Reinhard' | 'Cineon' | 'ACESFilmic';
+  toneExposure: number;
+  // FXAA
+  fxaaEnabled: boolean;
+  // Gamma
+  gammaEnabled: boolean;
+  // Color Grading
+  brightness: number;
+  contrast: number;
+  saturation: number;
+}
+
+const DEFAULT_PP_SETTINGS: PostProcessingSettings = {
+  enabled: false,
+  hdrEnabled: false,
+  hdrIntensity: 1,
+  hdrFilename: null,
+  bgType: 'color',
+  bgColor: '#1e1e1e',
+  bgIntensity: 1,
+  bloomEnabled: false,
+  bloomThreshold: 0.85,
+  bloomStrength: 0.5,
+  bloomRadius: 0.5,
+  ssaoEnabled: false,
+  ssaoKernelRadius: 16,
+  ssaoMinDistance: 0.005,
+  ssaoMaxDistance: 0.1,
+  toneEnabled: false,
+  toneType: 'ACESFilmic',
+  toneExposure: 1,
+  fxaaEnabled: false,
+  gammaEnabled: true,
+  brightness: 0,
+  contrast: 0,
+  saturation: 1
+};
+
+class PostProcessingManager {
+  private composer: EffectComposer | null = null;
+  private renderPass: RenderPass | null = null;
+  private bloomPass: UnrealBloomPass | null = null;
+  private ssaoPass: SSAOPass | null = null;
+  private fxaaPass: ShaderPass | null = null;
+  private gammaPass: ShaderPass | null = null;
+  private tonePass: OutputPass | null = null;
+  private brightnessPass: ShaderPass | null = null;
+  private huePass: ShaderPass | null = null;
+  
+  private settings: PostProcessingSettings = { ...DEFAULT_PP_SETTINGS };
+  private hdrTexture: THREE.Texture | null = null;
+  private pmremGenerator: THREE.PMREMGenerator | null = null;
+  
+  constructor(
+    private renderer: THREE.WebGLRenderer,
+    private scene: THREE.Scene,
+    private camera: THREE.PerspectiveCamera
+  ) {
+    this.loadSettings();
+    this.initComposer();
+    this.setupPMREMGenerator();
+  }
+
+  private setupPMREMGenerator(): void {
+    this.pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+    this.pmremGenerator.compileEquirectangularShader();
+  }
+
+  private initComposer(): void {
+    const size = this.renderer.getSize(new THREE.Vector2());
+    this.composer = new EffectComposer(this.renderer);
+    
+    // Render pass
+    this.renderPass = new RenderPass(this.scene, this.camera);
+    this.composer.addPass(this.renderPass);
+    
+    // SSAO pass (must be added early to work with depth)
+    this.ssaoPass = new SSAOPass(this.scene, this.camera, size.x, size.y);
+    this.ssaoPass.enabled = false;
+    this.composer.addPass(this.ssaoPass);
+    
+    // Bloom pass
+    this.bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(size.x, size.y),
+      this.settings.bloomStrength,
+      this.settings.bloomRadius,
+      this.settings.bloomThreshold
+    );
+    this.bloomPass.enabled = false;
+    this.composer.addPass(this.bloomPass);
+    
+    // Brightness/Contrast pass
+    this.brightnessPass = new ShaderPass(BrightnessContrastShader);
+    this.brightnessPass.uniforms['brightness'].value = this.settings.brightness;
+    this.brightnessPass.uniforms['contrast'].value = this.settings.contrast;
+    this.brightnessPass.enabled = true;
+    this.composer.addPass(this.brightnessPass);
+    
+    // Hue/Saturation pass
+    this.huePass = new ShaderPass(HueSaturationShader);
+    this.huePass.uniforms['saturation'].value = this.settings.saturation;
+    this.huePass.enabled = true;
+    this.composer.addPass(this.huePass);
+    
+    // FXAA pass
+    this.fxaaPass = new ShaderPass(FXAAShader);
+    const pixelRatio = this.renderer.getPixelRatio();
+    this.fxaaPass.material.uniforms['resolution'].value.x = 1 / (size.x * pixelRatio);
+    this.fxaaPass.material.uniforms['resolution'].value.y = 1 / (size.y * pixelRatio);
+    this.fxaaPass.enabled = false;
+    this.composer.addPass(this.fxaaPass);
+    
+    // Gamma correction pass
+    this.gammaPass = new ShaderPass(GammaCorrectionShader);
+    this.gammaPass.enabled = this.settings.gammaEnabled;
+    this.composer.addPass(this.gammaPass);
+    
+    // Output pass (includes tone mapping)
+    this.tonePass = new OutputPass();
+    this.tonePass.enabled = this.settings.toneEnabled;
+    this.composer.addPass(this.tonePass);
+    
+    this.updatePasses();
+  }
+
+  resize(width: number, height: number): void {
+    if (this.composer) {
+      this.composer.setSize(width, height);
+    }
+    if (this.bloomPass) {
+      this.bloomPass.resolution.set(width, height);
+    }
+    if (this.ssaoPass) {
+      this.ssaoPass.setSize(width, height);
+    }
+    if (this.fxaaPass) {
+      const pixelRatio = this.renderer.getPixelRatio();
+      this.fxaaPass.material.uniforms['resolution'].value.x = 1 / (width * pixelRatio);
+      this.fxaaPass.material.uniforms['resolution'].value.y = 1 / (height * pixelRatio);
+    }
+  }
+
+  render(): void {
+    if (this.settings.enabled && this.composer) {
+      this.composer.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
+  }
+
+  isEnabled(): boolean {
+    return this.settings.enabled;
+  }
+
+  getSettings(): PostProcessingSettings {
+    return { ...this.settings };
+  }
+
+  updateSettings(newSettings: Partial<PostProcessingSettings>): void {
+    this.settings = { ...this.settings, ...newSettings };
+    this.saveSettings();
+    this.updatePasses();
+    this.updateRenderer();
+  }
+
+  private updatePasses(): void {
+    if (!this.composer) return;
+
+    // Check if any post-processing effect is enabled
+    const anyEffectEnabled = 
+      this.settings.bloomEnabled ||
+      this.settings.ssaoEnabled ||
+      this.settings.fxaaEnabled ||
+      this.settings.toneEnabled ||
+      this.settings.gammaEnabled ||
+      this.settings.brightness !== 0 ||
+      this.settings.contrast !== 0 ||
+      this.settings.saturation !== 1;
+    
+    this.settings.enabled = anyEffectEnabled;
+
+    // Update bloom
+    if (this.bloomPass) {
+      this.bloomPass.enabled = this.settings.bloomEnabled;
+      this.bloomPass.threshold = this.settings.bloomThreshold;
+      this.bloomPass.strength = this.settings.bloomStrength;
+      this.bloomPass.radius = this.settings.bloomRadius;
+    }
+
+    // Update SSAO
+    if (this.ssaoPass) {
+      this.ssaoPass.enabled = this.settings.ssaoEnabled;
+      this.ssaoPass.kernelRadius = this.settings.ssaoKernelRadius;
+      this.ssaoPass.minDistance = this.settings.ssaoMinDistance;
+      this.ssaoPass.maxDistance = this.settings.ssaoMaxDistance;
+    }
+
+    // Update FXAA
+    if (this.fxaaPass) {
+      this.fxaaPass.enabled = this.settings.fxaaEnabled;
+    }
+
+    // Update Gamma
+    if (this.gammaPass) {
+      this.gammaPass.enabled = this.settings.gammaEnabled;
+    }
+
+    // Update Tone Mapping
+    if (this.tonePass) {
+      this.tonePass.enabled = this.settings.toneEnabled;
+    }
+
+    // Update Color Grading
+    if (this.brightnessPass) {
+      this.brightnessPass.uniforms['brightness'].value = this.settings.brightness;
+      this.brightnessPass.uniforms['contrast'].value = this.settings.contrast;
+    }
+    if (this.huePass) {
+      this.huePass.uniforms['saturation'].value = this.settings.saturation;
+    }
+
+    // Update HDR environment
+    this.updateHDREnvironment();
+    
+    // Update background
+    this.updateBackground();
+  }
+
+  private updateRenderer(): void {
+    // Set tone mapping on renderer
+    if (this.settings.toneEnabled) {
+      switch (this.settings.toneType) {
+        case 'Linear':
+          this.renderer.toneMapping = THREE.LinearToneMapping;
+          break;
+        case 'Reinhard':
+          this.renderer.toneMapping = THREE.ReinhardToneMapping;
+          break;
+        case 'Cineon':
+          this.renderer.toneMapping = THREE.CineonToneMapping;
+          break;
+        case 'ACESFilmic':
+          this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+          break;
+      }
+    } else {
+      this.renderer.toneMapping = THREE.NoToneMapping;
+    }
+    this.renderer.toneMappingExposure = this.settings.toneExposure;
+  }
+
+  loadHDR(url: string, filename: string, onLoad?: () => void, onError?: (error: any) => void): void {
+    const loader = new RGBELoader();
+    loader.load(url, (texture) => {
+      texture.mapping = THREE.EquirectangularReflectionMapping;
+      this.hdrTexture = texture;
+      this.settings.hdrFilename = filename;
+      this.updateHDREnvironment();
+      this.saveSettings();
+      if (onLoad) onLoad();
+    }, undefined, onError);
+  }
+
+  updateHDREnvironment(): void {
+    if (this.settings.hdrEnabled && this.hdrTexture && this.pmremGenerator) {
+      const pmremTexture = this.pmremGenerator.fromEquirectangular(this.hdrTexture).texture;
+      this.scene.environment = pmremTexture;
+      // environmentIntensity is handled via material.envMapIntensity on each material
+      this.scene.traverse((obj) => {
+        if (obj instanceof THREE.Mesh && obj.material) {
+          const mat = obj.material as THREE.MeshStandardMaterial;
+          mat.envMapIntensity = this.settings.hdrIntensity;
+        }
+      });
+    } else {
+      this.scene.environment = null;
+    }
+  }
+
+  updateBackground(): void {
+    switch (this.settings.bgType) {
+      case 'color':
+        this.scene.background = new THREE.Color(this.settings.bgColor);
+        break;
+      case 'gradient':
+        // Create gradient texture
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d')!;
+        const gradient = ctx.createLinearGradient(0, 0, 0, 512);
+        gradient.addColorStop(0, '#1a1a2e');
+        gradient.addColorStop(1, '#16213e');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 512, 512);
+        const gradientTexture = new THREE.CanvasTexture(canvas);
+        this.scene.background = gradientTexture;
+        break;
+      case 'hdr':
+        if (this.hdrTexture) {
+          this.scene.background = this.hdrTexture;
+          this.scene.backgroundIntensity = this.settings.bgIntensity;
+          this.scene.backgroundBlurriness = 0;
+        } else {
+          this.scene.background = new THREE.Color(this.settings.bgColor);
+        }
+        break;
+      case 'transparent':
+        this.scene.background = null;
+        break;
+    }
+  }
+
+  dispose(): void {
+    if (this.composer) {
+      this.composer.dispose();
+    }
+    if (this.hdrTexture) {
+      this.hdrTexture.dispose();
+    }
+    if (this.pmremGenerator) {
+      this.pmremGenerator.dispose();
+    }
+  }
+
+  private saveSettings(): void {
+    try {
+      localStorage.setItem('editor-pp-settings', JSON.stringify(this.settings));
+    } catch (e) {
+      console.warn('Failed to save post-processing settings:', e);
+    }
+  }
+
+  private loadSettings(): void {
+    try {
+      const saved = localStorage.getItem('editor-pp-settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        this.settings = { ...DEFAULT_PP_SETTINGS, ...parsed };
+      }
+    } catch (e) {
+      console.warn('Failed to load post-processing settings:', e);
+    }
+  }
+}
+
 export class Editor {
   private scene!: THREE.Scene;
   private camera!: THREE.PerspectiveCamera;
@@ -97,6 +479,8 @@ export class Editor {
   private raycaster = new THREE.Raycaster();
   private mouse = new THREE.Vector2();
   private gridHelper!: THREE.GridHelper;
+  
+  private postProcessing!: PostProcessingManager;
   
   selectedObject: THREE.Object3D | null = null;
   private transformMode: 'translate' | 'rotate' | 'scale' = 'translate';
@@ -129,6 +513,7 @@ export class Editor {
     this.setupFilterButtons();
     this.setupImportButton();
     this.setupModelDropdown();
+    this.setupPostProcessingUI();
     this.animate();
   }
 
@@ -143,6 +528,10 @@ export class Editor {
     this.renderer.setSize(this.viewport.clientWidth, this.viewport.clientHeight);
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.viewport.appendChild(this.renderer.domElement);
+    
+    // Initialize post-processing
+    this.postProcessing = new PostProcessingManager(this.renderer, this.scene, this.camera);
+    
     this.orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
     this.orbitControls.enableDamping = true;
     this.orbitControls.dampingFactor = 0.05;
@@ -173,6 +562,10 @@ export class Editor {
     
     document.getElementById('overlay')?.classList.add('hidden');
     this.ensureAllLightHelpers();
+    
+    // Restore post-processing settings to UI
+    this.restorePostProcessingUI();
+    
     console.log('[Editor] Initialized');
   }
 
@@ -185,7 +578,9 @@ export class Editor {
     this.updateHemisphereVisuals();
     this.updateCameraVisuals();
     if (this.isCameraAnimating) this.updateCameraAnimation();
-    this.renderer.render(this.scene, this.camera);
+    
+    // Use post-processing render
+    this.postProcessing.render();
   }
 
   private focusOnObject(obj: THREE.Object3D): void {
@@ -384,7 +779,13 @@ export class Editor {
     });
     this.transformControls.addEventListener('change', () => { if (this.selectedObject) this.updateTransformInputs(this.selectedObject); });
     this.renderer.domElement.addEventListener('pointerdown', (e) => this.handlePointerDown(e), { capture: false });
-    window.addEventListener('resize', () => { const w = this.viewport.clientWidth, h = this.viewport.clientHeight; this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); this.renderer.setSize(w, h); });
+    window.addEventListener('resize', () => { 
+      const w = this.viewport.clientWidth, h = this.viewport.clientHeight; 
+      this.camera.aspect = w / h; 
+      this.camera.updateProjectionMatrix(); 
+      this.renderer.setSize(w, h); 
+      this.postProcessing.resize(w, h);
+    });
     document.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       switch (e.key.toLowerCase()) { 
@@ -811,6 +1212,222 @@ export class Editor {
     if (obj instanceof THREE.Group) return '❏'; if (obj instanceof THREE.Scene) return '◈'; if (obj instanceof THREE.PerspectiveCamera || obj instanceof THREE.OrthographicCamera) return '◎';
     if (obj instanceof THREE.DirectionalLight) return '☀'; if (obj instanceof THREE.PointLight) return '●'; if (obj instanceof THREE.SpotLight) return '◐'; if (obj instanceof THREE.AmbientLight) return '○'; if (obj instanceof THREE.HemisphereLight) return '◑';
     return '◆';
+  }
+
+  // ==================== Post Processing UI Setup ====================
+  
+  private setupPostProcessingUI(): void {
+    // Tab switching
+    const tabs = document.querySelectorAll('.panel-tab');
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        const tabName = tab.getAttribute('data-tab');
+        tabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        
+        const propertiesPanel = document.getElementById('properties');
+        const postprocessingPanel = document.getElementById('postprocessing-panel');
+        
+        if (tabName === 'properties') {
+          propertiesPanel?.classList.add('active');
+          postprocessingPanel?.classList.remove('active');
+        } else {
+          propertiesPanel?.classList.remove('active');
+          postprocessingPanel?.classList.add('active');
+        }
+      });
+    });
+    
+    // HDR file loading
+    const hdrLoadBtn = document.getElementById('pp-hdr-load-btn');
+    const hdrInput = document.getElementById('pp-hdr-input') as HTMLInputElement;
+    const hdrLoading = document.getElementById('pp-hdr-loading');
+    const hdrFilename = document.getElementById('pp-hdr-filename');
+    
+    hdrLoadBtn?.addEventListener('click', () => hdrInput?.click());
+    hdrInput?.addEventListener('change', (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        hdrLoading?.classList.remove('hidden');
+        const url = URL.createObjectURL(file);
+        this.postProcessing.loadHDR(
+          url, 
+          file.name,
+          () => {
+            hdrLoading?.classList.add('hidden');
+            if (hdrFilename) hdrFilename.textContent = file.name;
+            // Enable HDR automatically
+            const hdrEnabled = document.getElementById('pp-hdr-enabled') as HTMLInputElement;
+            if (hdrEnabled && !hdrEnabled.checked) {
+              hdrEnabled.checked = true;
+              this.postProcessing.updateSettings({ hdrEnabled: true });
+            }
+            URL.revokeObjectURL(url);
+          },
+          (error) => {
+            hdrLoading?.classList.add('hidden');
+            console.error('[PostProcessing] Failed to load HDR:', error);
+            alert('加载 HDR 文件失败');
+          }
+        );
+      }
+    });
+    
+    // Setup all post-processing controls
+    this.setupPPControl('pp-hdr-enabled', 'checkbox', (v) => ({ hdrEnabled: v }));
+    this.setupPPControl('pp-hdr-intensity', 'range', (v) => ({ hdrIntensity: v }), 'pp-hdr-intensity-slider');
+    this.setupPPControl('pp-hdr-intensity-slider', 'range', (v) => ({ hdrIntensity: v }), 'pp-hdr-intensity');
+    
+    this.setupPPControl('pp-bg-type', 'select', (v) => ({ bgType: v }), undefined, (value) => {
+      // Update background row visibility
+      const colorRow = document.getElementById('pp-bg-color-row');
+      const intensityRow = document.getElementById('pp-bg-intensity-row');
+      if (value === 'color') {
+        colorRow!.style.display = 'flex';
+        intensityRow!.style.display = 'none';
+      } else if (value === 'hdr') {
+        colorRow!.style.display = 'none';
+        intensityRow!.style.display = 'flex';
+      } else {
+        colorRow!.style.display = value === 'gradient' ? 'none' : 'none';
+        intensityRow!.style.display = 'none';
+      }
+    });
+    this.setupPPControl('pp-bg-color', 'color', (v) => ({ bgColor: v }));
+    this.setupPPControl('pp-bg-intensity', 'range', (v) => ({ bgIntensity: v }), 'pp-bg-intensity-slider');
+    this.setupPPControl('pp-bg-intensity-slider', 'range', (v) => ({ bgIntensity: v }), 'pp-bg-intensity');
+    
+    this.setupPPControl('pp-bloom-enabled', 'checkbox', (v) => ({ bloomEnabled: v }));
+    this.setupPPControl('pp-bloom-threshold', 'range', (v) => ({ bloomThreshold: v }), 'pp-bloom-threshold-slider');
+    this.setupPPControl('pp-bloom-threshold-slider', 'range', (v) => ({ bloomThreshold: v }), 'pp-bloom-threshold');
+    this.setupPPControl('pp-bloom-strength', 'range', (v) => ({ bloomStrength: v }), 'pp-bloom-strength-slider');
+    this.setupPPControl('pp-bloom-strength-slider', 'range', (v) => ({ bloomStrength: v }), 'pp-bloom-strength');
+    this.setupPPControl('pp-bloom-radius', 'range', (v) => ({ bloomRadius: v }), 'pp-bloom-radius-slider');
+    this.setupPPControl('pp-bloom-radius-slider', 'range', (v) => ({ bloomRadius: v }), 'pp-bloom-radius');
+    
+    this.setupPPControl('pp-ssao-enabled', 'checkbox', (v) => ({ ssaoEnabled: v }));
+    this.setupPPControl('pp-ssao-radius', 'range', (v) => ({ ssaoKernelRadius: v }), 'pp-ssao-radius-slider');
+    this.setupPPControl('pp-ssao-radius-slider', 'range', (v) => ({ ssaoKernelRadius: v }), 'pp-ssao-radius');
+    this.setupPPControl('pp-ssao-intensity', 'range', (v) => ({ ssaoMaxDistance: v }), 'pp-ssao-intensity-slider');
+    this.setupPPControl('pp-ssao-intensity-slider', 'range', (v) => ({ ssaoMaxDistance: v }), 'pp-ssao-intensity');
+    
+    this.setupPPControl('pp-tone-enabled', 'checkbox', (v) => ({ toneEnabled: v }));
+    this.setupPPControl('pp-tone-type', 'select', (v) => ({ toneType: v }));
+    this.setupPPControl('pp-tone-exposure', 'range', (v) => ({ toneExposure: v }), 'pp-tone-exposure-slider');
+    this.setupPPControl('pp-tone-exposure-slider', 'range', (v) => ({ toneExposure: v }), 'pp-tone-exposure');
+    
+    this.setupPPControl('pp-fxaa-enabled', 'checkbox', (v) => ({ fxaaEnabled: v }));
+    this.setupPPControl('pp-gamma-enabled', 'checkbox', (v) => ({ gammaEnabled: v }));
+    
+    this.setupPPControl('pp-color-brightness', 'range', (v) => ({ brightness: v }), 'pp-color-brightness-slider');
+    this.setupPPControl('pp-color-brightness-slider', 'range', (v) => ({ brightness: v }), 'pp-color-brightness');
+    this.setupPPControl('pp-color-contrast', 'range', (v) => ({ contrast: v }), 'pp-color-contrast-slider');
+    this.setupPPControl('pp-color-contrast-slider', 'range', (v) => ({ contrast: v }), 'pp-color-contrast');
+    this.setupPPControl('pp-color-saturation', 'range', (v) => ({ saturation: v }), 'pp-color-saturation-slider');
+    this.setupPPControl('pp-color-saturation-slider', 'range', (v) => ({ saturation: v }), 'pp-color-saturation');
+  }
+  
+  private setupPPControl(
+    id: string, 
+    type: 'checkbox' | 'range' | 'select' | 'color',
+    getSettings: (value: any) => Partial<PostProcessingSettings>,
+    syncId?: string,
+    onChange?: (value: any) => void
+  ): void {
+    const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement;
+    if (!el) return;
+    
+    el.addEventListener('input', () => {
+      let value: any;
+      if (type === 'checkbox') value = (el as HTMLInputElement).checked;
+      else if (type === 'range' || type === 'color') value = parseFloat(el.value);
+      else if (type === 'select') value = el.value;
+      
+      if (type === 'color') value = el.value;
+      
+      // Sync with paired input/slider
+      if (syncId) {
+        const syncEl = document.getElementById(syncId) as HTMLInputElement;
+        if (syncEl) syncEl.value = el.value;
+      }
+      
+      this.postProcessing.updateSettings(getSettings(value));
+      if (onChange) onChange(value);
+    });
+  }
+  
+  private restorePostProcessingUI(): void {
+    const settings = this.postProcessing.getSettings();
+    
+    // Restore all UI controls from saved settings
+    const setValue = (id: string, value: any, type: 'checkbox' | 'range' | 'select' | 'color') => {
+      const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement;
+      if (!el) return;
+      if (type === 'checkbox') (el as HTMLInputElement).checked = value;
+      else el.value = String(value);
+    };
+    
+    setValue('pp-hdr-enabled', settings.hdrEnabled, 'checkbox');
+    setValue('pp-hdr-intensity', settings.hdrIntensity, 'range');
+    setValue('pp-hdr-intensity-slider', settings.hdrIntensity, 'range');
+    if (settings.hdrFilename) {
+      const filenameEl = document.getElementById('pp-hdr-filename');
+      if (filenameEl) filenameEl.textContent = settings.hdrFilename;
+    }
+    
+    setValue('pp-bg-type', settings.bgType, 'select');
+    setValue('pp-bg-color', settings.bgColor, 'color');
+    setValue('pp-bg-intensity', settings.bgIntensity, 'range');
+    setValue('pp-bg-intensity-slider', settings.bgIntensity, 'range');
+    
+    // Trigger background row visibility
+    const bgTypeSelect = document.getElementById('pp-bg-type') as HTMLSelectElement;
+    if (bgTypeSelect) {
+      const colorRow = document.getElementById('pp-bg-color-row');
+      const intensityRow = document.getElementById('pp-bg-intensity-row');
+      if (settings.bgType === 'color') {
+        if (colorRow) colorRow.style.display = 'flex';
+        if (intensityRow) intensityRow.style.display = 'none';
+      } else if (settings.bgType === 'hdr') {
+        if (colorRow) colorRow.style.display = 'none';
+        if (intensityRow) intensityRow.style.display = 'flex';
+      } else {
+        if (colorRow) colorRow.style.display = 'none';
+        if (intensityRow) intensityRow.style.display = 'none';
+      }
+    }
+    
+    setValue('pp-bloom-enabled', settings.bloomEnabled, 'checkbox');
+    setValue('pp-bloom-threshold', settings.bloomThreshold, 'range');
+    setValue('pp-bloom-threshold-slider', settings.bloomThreshold, 'range');
+    setValue('pp-bloom-strength', settings.bloomStrength, 'range');
+    setValue('pp-bloom-strength-slider', settings.bloomStrength, 'range');
+    setValue('pp-bloom-radius', settings.bloomRadius, 'range');
+    setValue('pp-bloom-radius-slider', settings.bloomRadius, 'range');
+    
+    setValue('pp-ssao-enabled', settings.ssaoEnabled, 'checkbox');
+    setValue('pp-ssao-radius', settings.ssaoKernelRadius, 'range');
+    setValue('pp-ssao-radius-slider', settings.ssaoKernelRadius, 'range');
+    setValue('pp-ssao-intensity', settings.ssaoMaxDistance, 'range');
+    setValue('pp-ssao-intensity-slider', settings.ssaoMaxDistance, 'range');
+    
+    setValue('pp-tone-enabled', settings.toneEnabled, 'checkbox');
+    setValue('pp-tone-type', settings.toneType, 'select');
+    setValue('pp-tone-exposure', settings.toneExposure, 'range');
+    setValue('pp-tone-exposure-slider', settings.toneExposure, 'range');
+    
+    setValue('pp-fxaa-enabled', settings.fxaaEnabled, 'checkbox');
+    setValue('pp-gamma-enabled', settings.gammaEnabled, 'checkbox');
+    
+    setValue('pp-color-brightness', settings.brightness, 'range');
+    setValue('pp-color-brightness-slider', settings.brightness, 'range');
+    setValue('pp-color-contrast', settings.contrast, 'range');
+    setValue('pp-color-contrast-slider', settings.contrast, 'range');
+    setValue('pp-color-saturation', settings.saturation, 'range');
+    setValue('pp-color-saturation-slider', settings.saturation, 'range');
+    
+    // Apply settings
+    this.postProcessing.updateSettings(settings);
   }
 }
 
