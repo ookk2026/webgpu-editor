@@ -108,6 +108,8 @@ export class Editor {
   private lightHelpers: Map<string, THREE.Object3D> = new Map();
   private ambientVisuals: Map<string, THREE.Mesh> = new Map();
   private hemisphereVisuals: Map<string, THREE.Mesh> = new Map();
+  private cameraVisuals: Map<string, THREE.Object3D> = new Map();
+  private cameraHelpers: Map<string, THREE.CameraHelper> = new Map();
   private commandHistory: Command[] = [];
   private historyIndex = -1;
   private maxHistory = 50;
@@ -151,14 +153,24 @@ export class Editor {
     this.scene.add(this.transformControls);
     this.gridHelper = new THREE.GridHelper(20, 20, 0x444444, 0x333333);
     this.scene.add(this.gridHelper);
+    // Default ambient light
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
     ambientLight.name = 'Ambient Light';
     this.scene.add(ambientLight);
     this.createAmbientVisual(ambientLight);
+    
+    // Default directional light
     const dirLight = new THREE.DirectionalLight(0xffffff, 1);
     dirLight.position.set(5, 10, 5);
     dirLight.name = 'Directional Light';
     this.scene.add(dirLight);
+    
+    // Add default camera to scene (visible, non-deletable)
+    this.camera.name = 'Main Camera';
+    this.camera.userData.isDefaultCamera = true;
+    this.scene.add(this.camera);
+    this.createCameraVisual(this.camera);
+    
     document.getElementById('overlay')?.classList.add('hidden');
     this.ensureAllLightHelpers();
     console.log('[Editor] Initialized');
@@ -171,6 +183,7 @@ export class Editor {
     this.updateLightHelperSelection();
     this.updateAmbientVisuals();
     this.updateHemisphereVisuals();
+    this.updateCameraVisuals();
     if (this.isCameraAnimating) this.updateCameraAnimation();
     this.renderer.render(this.scene, this.camera);
   }
@@ -201,7 +214,8 @@ export class Editor {
   }
 
   private createAmbientVisual(light: THREE.AmbientLight): void {
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 16), new THREE.MeshBasicMaterial({ color: light.color, wireframe: true }));
+    // Low poly: 8 segments = ~16 quads
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 4), new THREE.MeshBasicMaterial({ color: light.color, wireframe: true }));
     mesh.name = light.name + '_visual';
     mesh.position.copy(light.position);
     this.scene.add(mesh);
@@ -216,7 +230,8 @@ export class Editor {
   }
 
   private createHemisphereVisual(light: THREE.HemisphereLight): void {
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshBasicMaterial({ color: light.color, wireframe: true, side: THREE.DoubleSide }));
+    // Low poly hemisphere: 8x2 segments = ~16 quads
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshBasicMaterial({ color: light.color, wireframe: true, side: THREE.DoubleSide }));
     mesh.name = light.name + '_visual';
     mesh.position.copy(light.position);
     this.scene.add(mesh);
@@ -227,6 +242,55 @@ export class Editor {
     this.hemisphereVisuals.forEach((mesh, uuid) => {
       const light = this.scene.getObjectByProperty('uuid', uuid) as THREE.HemisphereLight;
       if (light) { mesh.visible = light.visible; mesh.position.copy(light.position); }
+    });
+  }
+
+  private createCameraVisual(camera: THREE.Camera): void {
+    // Create a camera icon (small pyramid shape)
+    const group = new THREE.Group();
+    
+    // Camera body (box)
+    const bodyGeo = new THREE.BoxGeometry(0.4, 0.3, 0.5);
+    const bodyMat = new THREE.MeshBasicMaterial({ color: 0x888888, wireframe: true });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    group.add(body);
+    
+    // Camera lens (cone)
+    const lensGeo = new THREE.ConeGeometry(0.15, 0.3, 8);
+    lensGeo.rotateX(-Math.PI / 2);
+    const lensMat = new THREE.MeshBasicMaterial({ color: 0xaaaaaa, wireframe: true });
+    const lens = new THREE.Mesh(lensGeo, lensMat);
+    lens.position.z = -0.4;
+    group.add(lens);
+    
+    group.name = camera.name + '_visual';
+    group.position.copy(camera.position);
+    group.rotation.copy(camera.rotation);
+    this.scene.add(group);
+    this.cameraVisuals.set(camera.uuid, group);
+    
+    // Add camera helper (frustum lines)
+    const helper = new THREE.CameraHelper(camera);
+    helper.name = camera.name + '_helper';
+    this.scene.add(helper);
+    this.cameraHelpers.set(camera.uuid, helper);
+  }
+
+  private updateCameraVisuals(): void {
+    this.cameraVisuals.forEach((visual, uuid) => {
+      const camera = this.scene.getObjectByProperty('uuid', uuid) as THREE.Camera;
+      if (camera) {
+        visual.visible = camera.visible;
+        visual.position.copy(camera.position);
+        visual.rotation.copy(camera.rotation);
+      }
+    });
+    this.cameraHelpers.forEach((helper, uuid) => {
+      const camera = this.scene.getObjectByProperty('uuid', uuid) as THREE.Camera;
+      if (camera) {
+        helper.visible = camera.visible;
+        helper.update();
+      }
     });
   }
 
@@ -323,7 +387,17 @@ export class Editor {
     window.addEventListener('resize', () => { const w = this.viewport.clientWidth, h = this.viewport.clientHeight; this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); this.renderer.setSize(w, h); });
     document.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      switch (e.key.toLowerCase()) { case 't': this.setTransformMode('translate'); break; case 'r': this.setTransformMode('rotate'); break; case 's': this.setTransformMode('scale'); break; case 'f': if (this.selectedObject) this.focusOnObject(this.selectedObject); break; case 'delete': case 'backspace': if (this.selectedObject && !(this.selectedObject instanceof THREE.Light)) this.deleteSelected(); break; case '+': case '=': this.adjustGizmoSize(0.1); break; case '-': case '_': this.adjustGizmoSize(-0.1); break; }
+      switch (e.key.toLowerCase()) { 
+        case 't': this.setTransformMode('translate'); break; 
+        case 'r': this.setTransformMode('rotate'); break; 
+        case 's': this.setTransformMode('scale'); break; 
+        case 'f': if (this.selectedObject) this.focusOnObject(this.selectedObject); break; 
+        case 'delete': case 'backspace': 
+          if (this.selectedObject && !this.isProtectedObject(this.selectedObject)) this.deleteSelected(); 
+          break; 
+        case '+': case '=': this.adjustGizmoSize(0.1); break; 
+        case '-': case '_': this.adjustGizmoSize(-0.1); break; 
+      }
       if (e.ctrlKey || e.metaKey) { if (e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? this.redo() : this.undo(); } else if (e.key.toLowerCase() === 'y') { e.preventDefault(); this.redo(); } }
     });
     this.setupMaterialListeners();
@@ -486,6 +560,9 @@ export class Editor {
     const lightProps = document.getElementById('light-properties');
     const isLight = this.selectedObject instanceof THREE.Light;
     if (lightProps) { lightProps.style.display = isLight ? 'block' : 'none'; if (isLight) this.populateLightInputs(this.selectedObject as THREE.Light); }
+    const cameraProps = document.getElementById('camera-properties');
+    const isCamera = this.selectedObject instanceof THREE.Camera;
+    if (cameraProps) { cameraProps.style.display = isCamera ? 'block' : 'none'; if (isCamera) this.populateCameraInputs(this.selectedObject as THREE.PerspectiveCamera); }
   }
 
   private populateMaterialInputs(mesh: THREE.Mesh): void {
@@ -576,13 +653,32 @@ export class Editor {
     console.log('[Editor] Added plane');
   }
 
+  private populateCameraInputs(camera: THREE.PerspectiveCamera): void {
+    const fov = document.getElementById('camera-fov') as HTMLInputElement;
+    const near = document.getElementById('camera-near') as HTMLInputElement;
+    const far = document.getElementById('camera-far') as HTMLInputElement;
+    if (fov) fov.value = camera.fov.toFixed(1);
+    if (near) near.value = camera.near.toFixed(2);
+    if (far) far.value = camera.far.toFixed(1);
+  }
+
   private addLight(type: 'ambient' | 'directional' | 'point' | 'spot' | 'hemisphere'): void {
     let light: THREE.Light, name: string;
     switch (type) {
       case 'ambient': light = new THREE.AmbientLight(0xffffff, 0.5); name = `Ambient Light ${this.getObjectCount('Ambient Light') + 1}`; break;
       case 'directional': light = new THREE.DirectionalLight(0xffffff, 1); light.position.set(2, 4, 2); name = `Directional Light ${this.getObjectCount('Directional Light') + 1}`; break;
       case 'point': light = new THREE.PointLight(0xffffff, 1, 100); light.position.set(0, 2, 0); name = `Point Light ${this.getObjectCount('Point Light') + 1}`; break;
-      case 'spot': light = new THREE.SpotLight(0xffffff, 1); light.position.set(0, 5, 0); (light as THREE.SpotLight).angle = Math.PI / 6; (light as THREE.SpotLight).penumbra = 0.2; name = `Spot Light ${this.getObjectCount('Spot Light') + 1}`; break;
+      case 'spot': 
+        const spotLight = new THREE.SpotLight(0xffffff, 1); 
+        spotLight.position.set(0, 5, 0); 
+        spotLight.angle = Math.PI / 6; 
+        spotLight.penumbra = 0.2;
+        spotLight.distance = 10;
+        spotLight.target.position.set(0, 0, 0);
+        this.scene.add(spotLight.target);
+        light = spotLight;
+        name = `Spot Light ${this.getObjectCount('Spot Light') + 1}`; 
+        break;
       case 'hemisphere': light = new THREE.HemisphereLight(0xffffff, 0x444444, 1); name = `Hemisphere Light ${this.getObjectCount('Hemisphere Light') + 1}`; break;
       default: light = new THREE.PointLight(0xffffff, 1); name = 'Light';
     }
@@ -594,7 +690,20 @@ export class Editor {
     console.log('[Editor] Added light:', name);
   }
 
-  private deleteSelected(): void { if (this.selectedObject) { this.executeCommand(new RemoveObjectCommand(this.scene, this.selectedObject, this)); console.log('[Editor] Deleted object'); } }
+  private deleteSelected(): void { 
+    if (this.selectedObject && !this.isProtectedObject(this.selectedObject)) { 
+      this.executeCommand(new RemoveObjectCommand(this.scene, this.selectedObject, this)); 
+      console.log('[Editor] Deleted object'); 
+    } else {
+      console.log('[Editor] Cannot delete protected object');
+    }
+  }
+  
+  private isProtectedObject(obj: THREE.Object3D): boolean {
+    // Default camera cannot be deleted
+    if (obj instanceof THREE.Camera && obj.userData.isDefaultCamera) return true;
+    return false;
+  }
   private getObjectCount(prefix: string): number { let c = 0; this.scene.traverse((o) => { if (o.name?.startsWith(prefix)) c++; }); return c; }
 
   private createLightHelper(light: THREE.Light): void {
@@ -609,18 +718,77 @@ export class Editor {
   private updateLightHelperSelection(): void { this.lightHelpers.forEach((h, uuid) => { const l = this.scene.getObjectByProperty('uuid', uuid) as THREE.Light; if (l) h.visible = l.visible; }); }
   private ensureAllLightHelpers(): void { this.scene.traverse((o) => { if (o instanceof THREE.Light && !(o instanceof THREE.AmbientLight) && !(o instanceof THREE.HemisphereLight) && !this.lightHelpers.has(o.uuid)) this.createLightHelper(o); }); }
 
+  // Track expanded state of tree items
+  private expandedItems: Set<string> = new Set();
+
   refreshSceneTree(): void {
     if (!this.sceneTree) return;
     this.sceneTree.innerHTML = '';
+    
+    // Render scene children recursively
     this.scene.children.forEach((child) => {
       if (!this.shouldShowInTree(child)) return;
-      const item = document.createElement('div');
-      item.className = 'scene-tree-item';
-      item.dataset.uuid = child.uuid;
-      item.innerHTML = `<span class="tree-icon">${this.getObjectIcon(child)}</span><span class="tree-name">${child.name || child.type}</span><span class="tree-visibility ${child.visible ? 'visible' : 'hidden'}" title="Toggle visibility"></span>`;
-      item.addEventListener('click', (e) => { if ((e.target as HTMLElement).classList.contains('tree-visibility')) { child.visible = !child.visible; this.refreshSceneTree(); return; } this.selectObject(child); });
-      this.sceneTree.appendChild(item);
+      this.renderTreeItem(child, 0);
     });
+  }
+
+  private renderTreeItem(obj: THREE.Object3D, depth: number): void {
+    const item = document.createElement('div');
+    item.className = 'scene-tree-item';
+    item.dataset.uuid = obj.uuid;
+    item.style.paddingLeft = `${8 + depth * 16}px`;
+    
+    const hasChildren = obj.children.length > 0 && obj.children.some(c => this.shouldShowInTree(c));
+    const isExpanded = this.expandedItems.has(obj.uuid);
+    const icon = this.getObjectIcon(obj);
+    const name = obj.name || obj.type;
+    
+    // Expand/collapse toggle
+    const expander = hasChildren ? (isExpanded ? '▼' : '▶') : '<span style="visibility:hidden">▶</span>';
+    
+    item.innerHTML = `
+      <span class="tree-expander">${expander}</span>
+      <span class="tree-icon">${icon}</span>
+      <span class="tree-name">${name}</span>
+      <span class="tree-visibility ${obj.visible ? 'visible' : 'hidden'}" title="Toggle visibility"></span>
+    `;
+    
+    // Click handlers
+    item.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      
+      // Toggle visibility
+      if (target.classList.contains('tree-visibility')) {
+        obj.visible = !obj.visible;
+        this.refreshSceneTree();
+        return;
+      }
+      
+      // Toggle expand/collapse
+      if (target.classList.contains('tree-expander') && hasChildren) {
+        if (isExpanded) {
+          this.expandedItems.delete(obj.uuid);
+        } else {
+          this.expandedItems.add(obj.uuid);
+        }
+        this.refreshSceneTree();
+        return;
+      }
+      
+      // Select object
+      this.selectObject(obj);
+    });
+    
+    this.sceneTree.appendChild(item);
+    
+    // Render children if expanded
+    if (isExpanded) {
+      obj.children.forEach((child) => {
+        if (this.shouldShowInTree(child)) {
+          this.renderTreeItem(child, depth + 1);
+        }
+      });
+    }
   }
 
   private updateSceneTreeSelection(): void {
