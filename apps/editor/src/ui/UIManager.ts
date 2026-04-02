@@ -107,7 +107,12 @@ export class UIManager {
     this.setupStatusBar();
 
     // Initialize responsive layout (default)
-    this.responsiveLayout = new ResponsiveLayout();
+    this.responsiveLayout = new ResponsiveLayout({
+      onLayoutChange: () => {
+        // Trigger viewport resize when panel layout changes
+        window.dispatchEvent(new Event('resize'));
+      }
+    });
     this.responsiveLayout.setupGlobalEvents();
 
     // Initialize draggable panels (optional mode)
@@ -497,56 +502,76 @@ export class UIManager {
   // -------------------------------------------------------------------------
 
   private setupKeyboardShortcuts(): void {
-    document.addEventListener('keydown', (e) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-
-      switch (e.key.toLowerCase()) {
-        case 't':
-          this.setTransformMode('translate');
-          break;
-        case 'r':
-          this.setTransformMode('rotate');
-          break;
-        case 's':
-          this.setTransformMode('scale');
-          break;
-        case 'f':
-          this.callbacks.onFocus();
-          break;
-        case 'd':
-          // Toggle draggable panel mode
-          if (e.shiftKey) {
-            this.toggleDraggableMode();
-          }
-          break;
-        case 'b':
-          // Toggle left panel (B for Browser/Scene)
-          if (e.shiftKey) {
-            this.togglePanelCollapse('left');
-          }
-          break;
-        case 'p':
-          // Toggle right panel (P for Properties)
-          if (e.shiftKey) {
-            this.togglePanelCollapse('right');
-          }
-          break;
-        case 'delete':
-        case 'backspace':
-          this.callbacks.onDelete();
-          break;
+    // Use window.addEventListener with capture phase to ensure we get all keyboard events
+    window.addEventListener('keydown', (e) => {
+      // Skip if user is typing in an input field
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
+        return;
       }
 
-      if (e.ctrlKey || e.metaKey) {
-        if (e.key.toLowerCase() === 'z') {
-          e.preventDefault();
-          e.shiftKey ? this.callbacks.onRedo() : this.callbacks.onUndo();
-        } else if (e.key.toLowerCase() === 'y') {
-          e.preventDefault();
-          this.callbacks.onRedo();
+      const key = e.key.toLowerCase();
+      console.log('[Keyboard] Key pressed:', key, 'Shift:', e.shiftKey, 'Ctrl:', e.ctrlKey);
+
+      // Transform mode shortcuts
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        switch (key) {
+          case 't':
+            e.preventDefault();
+            this.setTransformMode('translate');
+            return;
+          case 'r':
+            e.preventDefault();
+            this.setTransformMode('rotate');
+            return;
+          case 's':
+            e.preventDefault();
+            this.setTransformMode('scale');
+            return;
+          case 'f':
+            e.preventDefault();
+            this.callbacks.onFocus();
+            return;
+          case 'delete':
+          case 'backspace':
+            e.preventDefault();
+            this.callbacks.onDelete();
+            return;
         }
       }
-    });
+
+      // Shift + Key shortcuts for panels
+      if (e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        switch (key) {
+          case 'd':
+            e.preventDefault();
+            this.toggleDraggableMode();
+            return;
+          case 'b':
+            e.preventDefault();
+            this.togglePanelCollapse('left');
+            return;
+          case 'p':
+            e.preventDefault();
+            this.togglePanelCollapse('right');
+            return;
+        }
+      }
+
+      // Ctrl/Cmd shortcuts
+      if (e.ctrlKey || e.metaKey) {
+        switch (key) {
+          case 'z':
+            e.preventDefault();
+            e.shiftKey ? this.callbacks.onRedo() : this.callbacks.onUndo();
+            return;
+          case 'y':
+            e.preventDefault();
+            this.callbacks.onRedo();
+            return;
+        }
+      }
+    }, true); // Use capture phase
   }
 
   // -------------------------------------------------------------------------

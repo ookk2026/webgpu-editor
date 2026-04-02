@@ -41,6 +41,10 @@ export interface LayoutState {
   };
 }
 
+export interface ResponsiveLayoutCallbacks {
+  onLayoutChange?: () => void;
+}
+
 // ============================================================================
 // Responsive Layout Manager
 // ============================================================================
@@ -53,19 +57,20 @@ export class ResponsiveLayout {
   private centerPanel: HTMLElement;
   private leftSash: HTMLElement | null = null;
   private rightSash: HTMLElement | null = null;
+  private callbacks: ResponsiveLayoutCallbacks;
 
   // Configuration
   private config: Record<PanelSide, PanelConfig> = {
     left: {
       minWidth: 180,
-      maxWidth: 400,
-      defaultWidth: 220,
+      maxWidth: 500,
+      defaultWidth: 240,
       collapsedWidth: 48,
     },
     right: {
-      minWidth: 260,
-      maxWidth: 450,
-      defaultWidth: 280,
+      minWidth: 280,
+      maxWidth: 600,
+      defaultWidth: 320,
       collapsedWidth: 48,
     },
   };
@@ -89,7 +94,9 @@ export class ResponsiveLayout {
   // Storage key
   private storageKey = 'editor-layout-state';
 
-  constructor() {
+  constructor(callbacks: ResponsiveLayoutCallbacks = {}) {
+    this.callbacks = callbacks;
+    
     // Get DOM elements
     this.container = document.getElementById('workspace')!;
     this.leftPanel = document.getElementById('scene-panel')!;
@@ -123,8 +130,16 @@ export class ResponsiveLayout {
     // Create resize sashes
     this.createSashes();
 
-    // Apply initial layout
-    this.applyLayout();
+    // Apply initial layout (after DOM is ready)
+    requestAnimationFrame(() => {
+      this.applyLayout();
+      console.log('[ResponsiveLayout] Initial layout applied:', {
+        leftWidth: this.leftWidth,
+        rightWidth: this.rightWidth,
+        leftCollapsed: this.leftCollapsed,
+        rightCollapsed: this.rightCollapsed,
+      });
+    });
 
     // Listen for window resize
     window.addEventListener('resize', () => this.handleResize());
@@ -186,7 +201,7 @@ export class ResponsiveLayout {
 
     // Right sash (between center and right panel)
     this.rightSash = this.createSashElement('right');
-    this.container.appendChild(this.rightSash);
+    this.container.insertBefore(this.rightSash, this.rightPanel);
 
     // Setup drag events
     this.setupSashEvents(this.leftSash, 'left');
@@ -196,40 +211,49 @@ export class ResponsiveLayout {
   private createSashElement(side: PanelSide): HTMLElement {
     const sash = document.createElement('div');
     sash.className = `sash ${side}`;
-    sash.style.cssText = `
-      width: 4px;
-      background: transparent;
-      cursor: ${side === 'left' ? 'ew-resize' : 'ew-resize'};
-      flexShrink: 0;
-      position: relative;
-      z-index: 100;
-      transition: background 0.2s;
-    `;
+    sash.id = `sash-${side}`;
+    
+    // Use CSS class instead of inline styles where possible
+    sash.style.width = '8px';
+    sash.style.flexShrink = '0';
+    sash.style.cursor = 'ew-resize';
+    sash.style.position = 'relative';
+    sash.style.zIndex = '9999';
+    
+    // Debug: make sash visible by default with border
+    sash.style.background = 'transparent';
+    sash.style.borderLeft = side === 'right' ? '1px solid #333' : 'none';
+    sash.style.borderRight = side === 'left' ? '1px solid #333' : 'none';
 
-    // Visual indicator on hover
+    // Visual indicator (3 dots)
     const indicator = document.createElement('div');
+    indicator.className = 'sash-indicator';
+    indicator.innerHTML = '⋮';
     indicator.style.cssText = `
       position: absolute;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      width: 2px;
-      height: 40px;
-      background: #555;
-      border-radius: 1px;
-      opacity: 0;
-      transition: opacity 0.2s;
+      color: #666;
+      font-size: 14px;
+      line-height: 1;
+      opacity: 0.3;
+      pointer-events: none;
+      user-select: none;
     `;
     sash.appendChild(indicator);
 
+    // Hover effects
     sash.addEventListener('mouseenter', () => {
-      sash.style.background = '#0e639c';
+      sash.style.background = 'rgba(14, 99, 156, 0.2)';
+      indicator.style.color = '#0e639c';
       indicator.style.opacity = '1';
     });
     sash.addEventListener('mouseleave', () => {
       if (!this.isResizing) {
         sash.style.background = 'transparent';
-        indicator.style.opacity = '0';
+        indicator.style.color = '#666';
+        indicator.style.opacity = '0.3';
       }
     });
 
@@ -263,33 +287,24 @@ export class ResponsiveLayout {
 
   private handleResize(): void {
     const width = window.innerWidth;
-    const { sm, md } = this.breakpoints;
 
-    // Auto-collapse on small screens
-    if (width < sm) {
+    // Only auto-collapse on very small screens (< 768px)
+    // For larger screens, respect user's manual settings
+    if (width < 768) {
       // Mobile: collapse both panels
       if (!this.leftCollapsed) this.collapsePanel('left', false);
       if (!this.rightCollapsed) this.collapsePanel('right', false);
-    } else if (width < md) {
-      // Tablet: collapse one panel based on which is less used
-      if (!this.leftCollapsed && !this.rightCollapsed) {
-        this.collapsePanel('right', false);
-      }
-    } else {
-      // Desktop: restore collapsed panels if there's space
-      if (width > md + this.config.left.defaultWidth + this.config.right.defaultWidth + 400) {
-        if (this.leftCollapsed) this.expandPanel('left', false);
-        if (this.rightCollapsed) this.expandPanel('right', false);
-      }
     }
 
     // Ensure panels don't exceed window width
-    const maxAvailable = width - 300; // Reserve at least 300px for viewport
-    const halfAvailable = maxAvailable / 2;
+    const minViewportWidth = 400; // Minimum viewport width
+    const maxPanelWidth = width - minViewportWidth;
     
-    if (this.leftWidth + this.rightWidth > maxAvailable) {
-      this.leftWidth = Math.min(this.leftWidth, halfAvailable);
-      this.rightWidth = Math.min(this.rightWidth, halfAvailable);
+    if (this.leftWidth + this.rightWidth > maxPanelWidth && !this.leftCollapsed && !this.rightCollapsed) {
+      // Proportionally reduce panel widths
+      const ratio = this.leftWidth / (this.leftWidth + this.rightWidth);
+      this.leftWidth = Math.max(this.config.left.minWidth, maxPanelWidth * ratio);
+      this.rightWidth = Math.max(this.config.right.minWidth, maxPanelWidth * (1 - ratio));
       this.applyLayout();
     }
 
@@ -373,20 +388,30 @@ export class ResponsiveLayout {
     // Left panel
     if (this.leftCollapsed) {
       this.leftPanel.style.width = `${this.config.left.collapsedWidth}px`;
+      this.leftPanel.style.flexBasis = `${this.config.left.collapsedWidth}px`;
       this.leftPanel.classList.add('collapsed');
     } else {
       this.leftPanel.style.width = `${this.leftWidth}px`;
+      this.leftPanel.style.flexBasis = `${this.leftWidth}px`;
       this.leftPanel.classList.remove('collapsed');
     }
 
     // Right panel
     if (this.rightCollapsed) {
       this.rightPanel.style.width = `${this.config.right.collapsedWidth}px`;
+      this.rightPanel.style.flexBasis = `${this.config.right.collapsedWidth}px`;
       this.rightPanel.classList.add('collapsed');
     } else {
       this.rightPanel.style.width = `${this.rightWidth}px`;
+      this.rightPanel.style.flexBasis = `${this.rightWidth}px`;
       this.rightPanel.classList.remove('collapsed');
     }
+
+    // Force layout recalculation
+    this.leftPanel.style.flexShrink = '0';
+    this.leftPanel.style.flexGrow = '0';
+    this.rightPanel.style.flexShrink = '0';
+    this.rightPanel.style.flexGrow = '0';
 
     // Update collapse button icons
     const leftBtn = this.leftPanel.querySelector('.panel-collapse-btn') as HTMLElement;
@@ -394,6 +419,14 @@ export class ResponsiveLayout {
     
     if (leftBtn) leftBtn.innerHTML = this.leftCollapsed ? '▶' : '◀';
     if (rightBtn) rightBtn.innerHTML = this.rightCollapsed ? '◀' : '▶';
+
+    // Notify callback about layout change
+    this.callbacks.onLayoutChange?.();
+
+    console.log('[ResponsiveLayout] Layout applied:', {
+      leftWidth: this.leftPanel.style.width,
+      rightWidth: this.rightPanel.style.width,
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -401,6 +434,7 @@ export class ResponsiveLayout {
   // -------------------------------------------------------------------------
 
   collapsePanel(side: PanelSide, save = true): void {
+    console.log('[ResponsiveLayout] Collapsing panel:', side);
     if (side === 'left') {
       this.leftCollapsed = true;
     } else {
@@ -411,6 +445,7 @@ export class ResponsiveLayout {
   }
 
   expandPanel(side: PanelSide, save = true): void {
+    console.log('[ResponsiveLayout] Expanding panel:', side);
     if (side === 'left') {
       this.leftCollapsed = false;
     } else {
@@ -421,6 +456,10 @@ export class ResponsiveLayout {
   }
 
   togglePanel(side: PanelSide): void {
+    console.log('[ResponsiveLayout] Toggling panel:', side, {
+      leftCollapsed: this.leftCollapsed,
+      rightCollapsed: this.rightCollapsed,
+    });
     if (side === 'left') {
       this.leftCollapsed ? this.expandPanel('left') : this.collapsePanel('left');
     } else {
