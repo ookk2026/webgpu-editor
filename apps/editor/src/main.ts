@@ -182,71 +182,91 @@ class PostProcessingManager {
     private scene: THREE.Scene,
     private camera: THREE.PerspectiveCamera
   ) {
-    this.loadSettings();
-    this.initComposer();
-    this.setupPMREMGenerator();
+    try {
+      this.loadSettings();
+      this.initComposer();
+      this.setupPMREMGenerator();
+    } catch (e) {
+      console.error('[PostProcessingManager] Initialization failed:', e);
+    }
   }
 
   private setupPMREMGenerator(): void {
-    this.pmremGenerator = new THREE.PMREMGenerator(this.renderer);
-    this.pmremGenerator.compileEquirectangularShader();
+    try {
+      this.pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+      this.pmremGenerator.compileEquirectangularShader();
+    } catch (e) {
+      console.error('[PostProcessingManager] PMREMGenerator setup failed:', e);
+    }
   }
 
   private initComposer(): void {
-    const size = this.renderer.getSize(new THREE.Vector2());
-    this.composer = new EffectComposer(this.renderer);
-    
-    // Render pass
-    this.renderPass = new RenderPass(this.scene, this.camera);
-    this.composer.addPass(this.renderPass);
-    
-    // SSAO pass (must be added early to work with depth)
-    this.ssaoPass = new SSAOPass(this.scene, this.camera, size.x, size.y);
-    this.ssaoPass.enabled = false;
-    this.composer.addPass(this.ssaoPass);
-    
-    // Bloom pass
-    this.bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(size.x, size.y),
-      this.settings.bloomStrength,
-      this.settings.bloomRadius,
-      this.settings.bloomThreshold
-    );
-    this.bloomPass.enabled = false;
-    this.composer.addPass(this.bloomPass);
-    
-    // Brightness/Contrast pass
-    this.brightnessPass = new ShaderPass(BrightnessContrastShader);
-    this.brightnessPass.uniforms['brightness'].value = this.settings.brightness;
-    this.brightnessPass.uniforms['contrast'].value = this.settings.contrast;
-    this.brightnessPass.enabled = true;
-    this.composer.addPass(this.brightnessPass);
-    
-    // Hue/Saturation pass
-    this.huePass = new ShaderPass(HueSaturationShader);
-    this.huePass.uniforms['saturation'].value = this.settings.saturation;
-    this.huePass.enabled = true;
-    this.composer.addPass(this.huePass);
-    
-    // FXAA pass
-    this.fxaaPass = new ShaderPass(FXAAShader);
-    const pixelRatio = this.renderer.getPixelRatio();
-    this.fxaaPass.material.uniforms['resolution'].value.x = 1 / (size.x * pixelRatio);
-    this.fxaaPass.material.uniforms['resolution'].value.y = 1 / (size.y * pixelRatio);
-    this.fxaaPass.enabled = false;
-    this.composer.addPass(this.fxaaPass);
-    
-    // Gamma correction pass
-    this.gammaPass = new ShaderPass(GammaCorrectionShader);
-    this.gammaPass.enabled = this.settings.gammaEnabled;
-    this.composer.addPass(this.gammaPass);
-    
-    // Output pass (includes tone mapping)
-    this.tonePass = new OutputPass();
-    this.tonePass.enabled = this.settings.toneEnabled;
-    this.composer.addPass(this.tonePass);
-    
-    this.updatePasses();
+    try {
+      const size = this.renderer.getSize(new THREE.Vector2());
+      this.composer = new EffectComposer(this.renderer);
+      
+      // Render pass
+      this.renderPass = new RenderPass(this.scene, this.camera);
+      this.composer.addPass(this.renderPass);
+      
+      // SSAO pass (must be added early to work with depth)
+      this.ssaoPass = new SSAOPass(this.scene, this.camera, size.x, size.y);
+      this.ssaoPass.enabled = false;
+      this.composer.addPass(this.ssaoPass);
+      
+      // Bloom pass
+      this.bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(size.x, size.y),
+        this.settings.bloomStrength,
+        this.settings.bloomRadius,
+        this.settings.bloomThreshold
+      );
+      this.bloomPass.enabled = false;
+      this.composer.addPass(this.bloomPass);
+      
+      // Brightness/Contrast pass
+      this.brightnessPass = new ShaderPass(BrightnessContrastShader);
+      if (this.brightnessPass.uniforms['brightness']) {
+        this.brightnessPass.uniforms['brightness'].value = this.settings.brightness;
+      }
+      if (this.brightnessPass.uniforms['contrast']) {
+        this.brightnessPass.uniforms['contrast'].value = this.settings.contrast;
+      }
+      this.brightnessPass.enabled = false;
+      this.composer.addPass(this.brightnessPass);
+      
+      // Hue/Saturation pass
+      this.huePass = new ShaderPass(HueSaturationShader);
+      if (this.huePass.uniforms['saturation']) {
+        this.huePass.uniforms['saturation'].value = this.settings.saturation;
+      }
+      this.huePass.enabled = false;
+      this.composer.addPass(this.huePass);
+      
+      // FXAA pass
+      this.fxaaPass = new ShaderPass(FXAAShader);
+      const pixelRatio = this.renderer.getPixelRatio();
+      if (this.fxaaPass.material.uniforms['resolution']) {
+        this.fxaaPass.material.uniforms['resolution'].value.x = 1 / (size.x * pixelRatio);
+        this.fxaaPass.material.uniforms['resolution'].value.y = 1 / (size.y * pixelRatio);
+      }
+      this.fxaaPass.enabled = false;
+      this.composer.addPass(this.fxaaPass);
+      
+      // Gamma correction pass
+      this.gammaPass = new ShaderPass(GammaCorrectionShader);
+      this.gammaPass.enabled = false;
+      this.composer.addPass(this.gammaPass);
+      
+      // Output pass (includes tone mapping)
+      this.tonePass = new OutputPass();
+      this.tonePass.enabled = false;
+      this.composer.addPass(this.tonePass);
+      
+      this.updatePasses();
+    } catch (e) {
+      console.error('[Editor] Post-processing init failed:', e);
+    }
   }
 
   resize(width: number, height: number): void {
@@ -564,7 +584,14 @@ export class Editor {
     this.ensureAllLightHelpers();
     
     // Restore post-processing settings to UI
-    this.restorePostProcessingUI();
+    try {
+      this.restorePostProcessingUI();
+    } catch (e) {
+      console.error('[Editor] Failed to restore post-processing UI:', e);
+    }
+    
+    // Ensure nothing is selected on startup
+    this.selectObject(null);
     
     console.log('[Editor] Initialized');
   }
