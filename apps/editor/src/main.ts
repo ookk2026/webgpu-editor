@@ -18,6 +18,7 @@ class Editor {
   private selectedObject: THREE.Object3D | null = null;
   private transformMode: 'translate' | 'rotate' | 'scale' = 'translate';
   private isDragging = false;
+  private gizmoSize = 0.3; // Default gizmo size
   
   // Light helpers
   private lightHelpers: Map<string, THREE.Object3D> = new Map();
@@ -73,7 +74,7 @@ class Editor {
     // Transform Controls
     this.transformControls = new TransformControls(this.camera, this.renderer.domElement);
     this.transformControls.setMode('translate');
-    this.transformControls.setSize(0.6); // Smaller handles
+    this.transformControls.setSize(this.gizmoSize);
     this.scene.add(this.transformControls);
 
     // Grid Helper
@@ -201,8 +202,22 @@ class Editor {
             this.deleteSelected();
           }
           break;
+        case '+':
+        case '=':
+          this.adjustGizmoSize(0.1);
+          break;
+        case '-':
+        case '_':
+          this.adjustGizmoSize(-0.1);
+          break;
       }
     });
+  }
+
+  private adjustGizmoSize(delta: number): void {
+    this.gizmoSize = Math.max(0.1, Math.min(2.0, this.gizmoSize + delta));
+    this.transformControls.setSize(this.gizmoSize);
+    console.log('[Editor] Gizmo size:', this.gizmoSize.toFixed(2));
   }
 
   private handlePointerDown(e: PointerEvent): void {
@@ -280,7 +295,7 @@ class Editor {
     if (obj) {
       this.transformControls.attach(obj);
       this.transformControls.visible = true;
-      this.transformControls.setSize(0.6); // Smaller handles
+      this.transformControls.setSize(this.gizmoSize);
       console.log('[Editor] Attached TransformControls to', obj.name || obj.type);
     } else {
       this.transformControls.detach();
@@ -552,16 +567,23 @@ class Editor {
   }
 
   private getObjectIcon(obj: THREE.Object3D): string {
+    // Use simple Unicode symbols for consistency
     if (obj instanceof THREE.Mesh) {
-      if (obj.geometry instanceof THREE.BoxGeometry) return '⬛';
-      if (obj.geometry instanceof THREE.SphereGeometry) return '🔵';
-      return '📦';
+      if (obj.geometry instanceof THREE.BoxGeometry) return '□';  // Box
+      if (obj.geometry instanceof THREE.SphereGeometry) return '○';  // Sphere
+      if (obj.geometry instanceof THREE.PlaneGeometry) return '▭';  // Plane
+      if (obj.geometry instanceof THREE.CylinderGeometry) return '▲';  // Cylinder
+      return '◆';  // Generic mesh
     }
-    if (obj instanceof THREE.Group) return '📁';
-    if (obj instanceof THREE.DirectionalLight) return '☀️';
-    if (obj instanceof THREE.PointLight) return '💡';
-    if (obj instanceof THREE.AmbientLight) return '🌅';
-    return '📦';
+    if (obj instanceof THREE.Group) return '❏';  // Group
+    if (obj instanceof THREE.Scene) return '◈';  // Scene
+    if (obj instanceof THREE.PerspectiveCamera || obj instanceof THREE.OrthographicCamera) return '◎';  // Camera
+    if (obj instanceof THREE.DirectionalLight) return '☀';  // Directional light
+    if (obj instanceof THREE.PointLight) return '●';  // Point light
+    if (obj instanceof THREE.SpotLight) return '◐';  // Spot light
+    if (obj instanceof THREE.AmbientLight) return '○';  // Ambient light
+    if (obj instanceof THREE.HemisphereLight) return '◑';  // Hemisphere light
+    return '◆';  // Default
   }
 }
 

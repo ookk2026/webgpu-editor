@@ -110,10 +110,22 @@
     .scene-tree-item.selected {
       background: #094771;
     }
-    .scene-tree-item .icon {
+    .scene-tree-item .tree-icon {
       width: 16px;
       height: 16px;
-      opacity: 0.7;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      opacity: 0.8;
+    }
+    .scene-tree-item .tree-name {
+      flex: 1;
+      font-size: 13px;
+      color: #e0e0e0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .scene-tree-item .tree-visibility {
       margin-left: auto;
@@ -547,50 +559,7 @@
           <button id="btn-toggle-grid" class="active" title="显示/隐藏网格">⊞</button>
         </div>
 
-        <!-- 浮动工具栏 2 - 灯光创建（左侧，垂直） -->
-        <div id="viewport-left-toolbar" class="floating-toolbar vertical" style="left: 12px; top: 50%; transform: translateY(-50%);">
-          <button id="btn-add-ambient" title="环境光">
-            <svg viewBox="0 0 24 24">
-              <rect x="4" y="4" width="16" height="16" rx="1"/>
-              <rect x="7" y="7" width="10" height="10" rx="0.5" opacity="0.5"/>
-            </svg>
-          </button>
-          <button id="btn-add-directional" title="方向光">
-            <svg viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="4"/>
-              <line x1="12" y1="4" x2="12" y2="2"/>
-              <line x1="12" y1="20" x2="12" y2="22"/>
-              <line x1="4" y1="12" x2="2" y2="12"/>
-              <line x1="20" y1="12" x2="22" y2="12"/>
-              <line x1="6.34" y1="6.34" x2="4.93" y2="4.93"/>
-              <line x1="17.66" y1="17.66" x2="19.07" y2="19.07"/>
-              <line x1="6.34" y1="17.66" x2="4.93" y2="19.07"/>
-              <line x1="17.66" y1="6.34" x2="19.07" y2="4.93"/>
-            </svg>
-          </button>
-          <button id="btn-add-point" title="点光源">
-            <svg viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="5"/>
-              <ellipse cx="12" cy="12" rx="5" ry="2" opacity="0.4"/>
-              <ellipse cx="12" cy="12" rx="2" ry="5" opacity="0.4"/>
-            </svg>
-          </button>
-          <button id="btn-add-spot" title="聚光灯">
-            <svg viewBox="0 0 24 24">
-              <path d="M8 20 L16 20 L12 6 Z"/>
-              <ellipse cx="12" cy="20" rx="4" ry="1"/>
-              <line x1="10" y1="14" x2="14" y2="14"/>
-            </svg>
-          </button>
-          <button id="btn-add-hemisphere" title="半球光">
-            <svg viewBox="0 0 24 24">
-              <path d="M4 14 Q12 4 20 14"/>
-              <line x1="4" y1="14" x2="20" y2="14"/>
-              <line x1="8" y1="10" x2="16" y2="10"/>
-              <line x1="6" y1="12" x2="18" y2="12"/>
-            </svg>
-          </button>
-        </div>
+
       </div>
 
       <!-- 右侧面板：属性 -->
