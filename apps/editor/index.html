@@ -550,6 +550,7 @@
       <div id="viewport-container">
         <div id="viewport"></div>
         <!-- 浮动工具栏 1 - 变换工具（顶部，水平） -->
+        <!-- 浮动工具栏 1 - 变换工具（顶部，水平） -->
         <div id="viewport-toolbar" class="floating-toolbar" style="left: 50%; top: 12px; transform: translateX(-50%);">
           <button id="tool-translate" class="active" title="移动 (T)">↔</button>
           <button id="tool-rotate" title="旋转 (R)">↻</button>
@@ -557,6 +558,47 @@
           <button id="tool-local" title="本地/世界坐标">⊕</button>
           <div class="toolbar-divider"></div>
           <button id="btn-toggle-grid" class="active" title="显示/隐藏网格">⊞</button>
+        </div>
+        
+        <!-- 浮动工具栏 2 - 灯光创建（左侧，垂直） -->
+        <div id="viewport-left-toolbar" class="floating-toolbar vertical" style="left: 12px; top: 50%; transform: translateY(-50%);">
+          <button id="btn-add-ambient" title="环境光">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="12" cy="12" r="4"/>
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+            </svg>
+          </button>
+          <button id="btn-add-directional" title="方向光">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="12" cy="12" r="4"/>
+              <line x1="12" y1="4" x2="12" y2="2"/>
+              <line x1="12" y1="20" x2="12" y2="22"/>
+              <line x1="4" y1="12" x2="2" y2="12"/>
+              <line x1="20" y1="12" x2="22" y2="12"/>
+              <line x1="6.34" y1="6.34" x2="4.93" y2="4.93"/>
+              <line x1="17.66" y1="17.66" x2="19.07" y2="19.07"/>
+              <line x1="6.34" y1="17.66" x2="4.93" y2="19.07"/>
+              <line x1="17.66" y1="6.34" x2="19.07" y2="4.93"/>
+            </svg>
+          </button>
+          <button id="btn-add-point" title="点光源">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="12" cy="12" r="5"/>
+              <circle cx="12" cy="12" r="2" fill="currentColor"/>
+            </svg>
+          </button>
+          <button id="btn-add-spot" title="聚光灯">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M12 6L8 20h8L12 6z"/>
+              <ellipse cx="12" cy="20" rx="4" ry="1"/>
+            </svg>
+          </button>
+          <button id="btn-add-hemisphere" title="半球光">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M4 14c0-4.4 3.6-8 8-8s8 3.6 8 8"/>
+              <line x1="4" y1="14" x2="20" y2="14"/>
+            </svg>
+          </button>
         </div>
 
 

@@ -135,6 +135,23 @@ class Editor {
       this.addSphere();
     });
 
+    // Add light buttons
+    document.getElementById('btn-add-ambient')?.addEventListener('click', () => {
+      this.addLight('ambient');
+    });
+    document.getElementById('btn-add-directional')?.addEventListener('click', () => {
+      this.addLight('directional');
+    });
+    document.getElementById('btn-add-point')?.addEventListener('click', () => {
+      this.addLight('point');
+    });
+    document.getElementById('btn-add-spot')?.addEventListener('click', () => {
+      this.addLight('spot');
+    });
+    document.getElementById('btn-add-hemisphere')?.addEventListener('click', () => {
+      this.addLight('hemisphere');
+    });
+
     // Property inputs
     const inputIds = ['pos-x', 'pos-y', 'pos-z', 'rot-x', 'rot-y', 'rot-z', 'scale-x', 'scale-y', 'scale-z'];
     inputIds.forEach(id => {
@@ -487,6 +504,50 @@ class Editor {
     this.selectObject(mesh);
     
     console.log('[Editor] Added sphere');
+  }
+
+  private addLight(type: 'ambient' | 'directional' | 'point' | 'spot' | 'hemisphere'): void {
+    let light: THREE.Light;
+    let name: string;
+    
+    switch (type) {
+      case 'ambient':
+        light = new THREE.AmbientLight(0xffffff, 0.5);
+        name = `Ambient Light ${this.getObjectCount('Ambient Light') + 1}`;
+        break;
+      case 'directional':
+        light = new THREE.DirectionalLight(0xffffff, 1);
+        light.position.set(2, 4, 2);
+        name = `Directional Light ${this.getObjectCount('Directional Light') + 1}`;
+        break;
+      case 'point':
+        light = new THREE.PointLight(0xffffff, 1, 100);
+        light.position.set(0, 2, 0);
+        name = `Point Light ${this.getObjectCount('Point Light') + 1}`;
+        break;
+      case 'spot':
+        light = new THREE.SpotLight(0xffffff, 1);
+        light.position.set(0, 5, 0);
+        (light as THREE.SpotLight).angle = Math.PI / 6;
+        (light as THREE.SpotLight).penumbra = 0.2;
+        name = `Spot Light ${this.getObjectCount('Spot Light') + 1}`;
+        break;
+      case 'hemisphere':
+        light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
+        name = `Hemisphere Light ${this.getObjectCount('Hemisphere Light') + 1}`;
+        break;
+      default:
+        light = new THREE.PointLight(0xffffff, 1);
+        name = 'Light';
+    }
+    
+    light.name = name;
+    this.scene.add(light);
+    this.createLightHelper(light);
+    this.refreshSceneTree();
+    this.selectObject(light);
+    
+    console.log('[Editor] Added light:', name);
   }
 
   private deleteSelected(): void {
