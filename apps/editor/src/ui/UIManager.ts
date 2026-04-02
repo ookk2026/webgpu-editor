@@ -555,6 +555,11 @@ export class UIManager {
             e.preventDefault();
             this.togglePanelCollapse('right');
             return;
+          case 'r':
+            e.preventDefault();
+            this.responsiveLayout?.resetLayout();
+            this.showNotification('布局已重置 (Shift+R)');
+            return;
         }
       }
 

@@ -83,11 +83,15 @@
     }
     /* 左侧面板 - 场景层级 */
     #scene-panel {
+      width: 240px;
       min-width: 48px;
+      max-width: 400px;
       background: #252526;
       border-right: 1px solid #333;
       display: flex;
       flex-direction: column;
+      flex-shrink: 0;
+      flex-grow: 0;
     }
     #scene-panel-header {
       padding: 8px 12px;
@@ -187,11 +191,15 @@
     }
     /* 右侧面板 - 属性 */
     #properties-panel {
+      width: 320px;
       min-width: 48px;
+      max-width: 500px;
       background: #252526;
       border-left: 1px solid #333;
       display: flex;
       flex-direction: column;
+      flex-shrink: 0;
+      flex-grow: 0;
     }
     #properties-header {
       padding: 8px 12px;
@@ -207,7 +215,9 @@
     #postprocessing-content {
       flex: 1;
       overflow-y: auto;
+      overflow-x: hidden;
       padding: 16px 20px;
+      min-height: 0;
     }
     .property-group {
       margin-bottom: 16px;
@@ -447,11 +457,15 @@
       cursor: pointer;
       flex-shrink: 0;
       margin-left: auto;
+      margin-right: 4px;
       transition: background-color 0.2s;
-      background: #4caf50;  /* Default: visible (green) */
+      align-self: center;
+    }
+    .tree-visibility.visible {
+      background: #4caf50;  /* Visible: green */
     }
     .tree-visibility.hidden {
-      background: #666 !important;  /* Hidden: gray */
+      background: #666;  /* Hidden: gray */
     }
     .scene-tree-item:hover .visibility-dot, .scene-tree-item:hover .tree-visibility {
       opacity: 1;

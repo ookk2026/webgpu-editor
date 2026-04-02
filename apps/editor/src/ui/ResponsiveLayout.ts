@@ -105,10 +105,16 @@ export class ResponsiveLayout {
 
     // Load saved state or use defaults
     const savedState = this.loadState();
+    const windowWidth = window.innerWidth;
+    
+    // Use saved width if available, otherwise use defaults
     this.leftWidth = savedState?.leftPanel?.width || this.config.left.defaultWidth;
     this.rightWidth = savedState?.rightPanel?.width || this.config.right.defaultWidth;
-    this.leftCollapsed = savedState?.leftPanel?.collapsed || false;
-    this.rightCollapsed = savedState?.rightPanel?.collapsed || false;
+    
+    // Only use saved collapsed state on small screens, otherwise default to expanded
+    const shouldRestoreCollapsed = windowWidth < 1024;
+    this.leftCollapsed = shouldRestoreCollapsed ? (savedState?.leftPanel?.collapsed || false) : false;
+    this.rightCollapsed = shouldRestoreCollapsed ? (savedState?.rightPanel?.collapsed || false) : false;
 
     this.init();
   }
@@ -297,11 +303,19 @@ export class ResponsiveLayout {
     }
 
     // Ensure panels don't exceed window width
-    const minViewportWidth = 400; // Minimum viewport width
-    const maxPanelWidth = width - minViewportWidth;
+    const minViewportWidth = 300; // Minimum viewport width (reduced)
+    const totalMinWidth = this.config.left.minWidth + this.config.right.minWidth + minViewportWidth;
     
-    if (this.leftWidth + this.rightWidth > maxPanelWidth && !this.leftCollapsed && !this.rightCollapsed) {
-      // Proportionally reduce panel widths
+    // If window is too small for all panels + viewport, proportionally reduce
+    if (width < totalMinWidth && !this.leftCollapsed && !this.rightCollapsed) {
+      const availableWidth = width - minViewportWidth;
+      const ratio = this.config.left.minWidth / (this.config.left.minWidth + this.config.right.minWidth);
+      this.leftWidth = Math.max(160, availableWidth * ratio);
+      this.rightWidth = Math.max(200, availableWidth * (1 - ratio));
+      this.applyLayout();
+    } else if (this.leftWidth + this.rightWidth > width - minViewportWidth && !this.leftCollapsed && !this.rightCollapsed) {
+      // Normal case: panels too wide for current window
+      const maxPanelWidth = width - minViewportWidth;
       const ratio = this.leftWidth / (this.leftWidth + this.rightWidth);
       this.leftWidth = Math.max(this.config.left.minWidth, maxPanelWidth * ratio);
       this.rightWidth = Math.max(this.config.right.minWidth, maxPanelWidth * (1 - ratio));
