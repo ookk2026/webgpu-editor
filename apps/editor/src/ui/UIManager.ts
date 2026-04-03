@@ -37,6 +37,7 @@ export interface UICallbacks {
   onAddCube: () => void;
   onAddSphere: () => void;
   onAddPlane: () => void;
+  onAddCamera: () => void;
   onAddLight: (type: 'ambient' | 'directional' | 'point' | 'spot' | 'hemisphere') => void;
   onImportModel: () => void;
   onDelete: () => void;
@@ -343,7 +344,8 @@ export class UIManager {
       <div id="model-dropdown-menu" style="display: none; position: absolute; top: 100%; left: 0; background: #3c3c3c; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); z-index: 1000; min-width: 120px; margin-top: 4px;">
         <div class="dropdown-model-item" data-type="cube" style="padding: 8px 12px; cursor: pointer; color: #e0e0e0; font-size: 12px; border-radius: 4px 4px 0 0;">□ 立方体</div>
         <div class="dropdown-model-item" data-type="sphere" style="padding: 8px 12px; cursor: pointer; color: #e0e0e0; font-size: 12px;">○ 球体</div>
-        <div class="dropdown-model-item" data-type="plane" style="padding: 8px 12px; cursor: pointer; color: #e0e0e0; font-size: 12px; border-radius: 0 0 4px 4px;">▭ 平面</div>
+        <div class="dropdown-model-item" data-type="plane" style="padding: 8px 12px; cursor: pointer; color: #e0e0e0; font-size: 12px;">▭ 平面</div>
+        <div class="dropdown-model-item" data-type="camera" style="padding: 8px 12px; cursor: pointer; color: #e0e0e0; font-size: 12px; border-radius: 0 0 4px 4px;">📷 摄像机</div>
       </div>
     `;
 
@@ -373,6 +375,7 @@ export class UIManager {
         if (type === 'cube') this.callbacks.onAddCube();
         else if (type === 'sphere') this.callbacks.onAddSphere();
         else if (type === 'plane') this.callbacks.onAddPlane();
+        else if (type === 'camera') this.callbacks.onAddCamera();
         menu.style.display = 'none';
       });
 

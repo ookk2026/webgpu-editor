@@ -108,6 +108,7 @@ class Editor {
       onAddCube: () => this.addCube(),
       onAddSphere: () => this.addSphere(),
       onAddPlane: () => this.addPlane(),
+      onAddCamera: () => this.addCamera(),
       onAddLight: (type) => this.addLight(type),
       onImportModel: () => this.triggerImport(),
       onDelete: () => this.deleteSelected(),
@@ -357,6 +358,16 @@ class Editor {
   // -------------------------------------------------------------------------
 
   private addObject(obj: THREE.Object3D): void {
+    // Process cameras in imported objects - create visual but hide helper by default
+    obj.traverse((child) => {
+      if (child instanceof THREE.Camera && !child.userData.isDefaultCamera) {
+        // Mark as imported camera
+        child.userData.isImportedCamera = true;
+        // Create visual representation but helper will be hidden by default
+        this.viewport.createCameraVisual(child);
+      }
+    });
+
     this.commandManager.execute(
       new AddObjectCommand(this.scene, obj, {
         refreshSceneTree: () => {
@@ -386,6 +397,18 @@ class Editor {
           this.updateObjectCount();
         },
         selectObject: (o) => this.onObjectSelected(o),
+        onRemove: (o) => {
+          // Remove light helper if deleting a light
+          if (o instanceof THREE.Light) {
+            this.lightHelpers.removeHelper(o.uuid);
+          }
+        },
+        onUndoRemove: (o) => {
+          // Recreate light helper if undoing light deletion
+          if (o instanceof THREE.Light) {
+            this.lightHelpers.createHelper(o);
+          }
+        },
       })
     );
   }
@@ -442,6 +465,19 @@ class Editor {
     mesh.name = `Plane ${this.getObjectCount('Plane') + 1}`;
     mesh.receiveShadow = true;
     this.addObject(mesh);
+  }
+
+  private addCamera(): void {
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(5, 5, 10);
+    camera.lookAt(0, 0, 0);
+    camera.name = `Camera ${this.getObjectCount('Camera') + 1}`;
+    
+    // Add to scene and create visual representation
+    this.addObject(camera);
+    this.viewport.createCameraVisual(camera);
+    
+    console.log('[Editor] Added camera:', camera.name);
   }
 
   private addLight(type: 'ambient' | 'directional' | 'point' | 'spot' | 'hemisphere'): void {

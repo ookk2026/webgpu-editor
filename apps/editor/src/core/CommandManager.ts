@@ -52,6 +52,8 @@ export class RemoveObjectCommand implements Command {
     private callbacks: {
       refreshSceneTree: () => void;
       selectObject: (obj: THREE.Object3D | null) => void;
+      onRemove?: (obj: THREE.Object3D) => void;
+      onUndoRemove?: (obj: THREE.Object3D) => void;
     }
   ) {
     this.parent = obj.parent;
@@ -59,6 +61,8 @@ export class RemoveObjectCommand implements Command {
 
   execute(): void {
     this.scene.remove(this.obj);
+    // Call optional callback for cleanup (e.g., remove light helpers)
+    this.callbacks.onRemove?.(this.obj);
     this.callbacks.selectObject(null);
     this.callbacks.refreshSceneTree();
   }
@@ -66,6 +70,8 @@ export class RemoveObjectCommand implements Command {
   undo(): void {
     if (this.parent) {
       this.parent.add(this.obj);
+      // Call optional callback for restore (e.g., recreate light helpers)
+      this.callbacks.onUndoRemove?.(this.obj);
       this.callbacks.refreshSceneTree();
     }
   }

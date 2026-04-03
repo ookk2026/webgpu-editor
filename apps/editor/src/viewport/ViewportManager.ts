@@ -98,6 +98,9 @@ export class ViewportManager {
     this.renderer.toneMapping = THREE.NoToneMapping;
     this.container.appendChild(this.renderer.domElement);
 
+    // Ensure all camera helpers are hidden initially
+    this.hideAllCameraHelpers();
+
     // Setup orbit controls
     this.orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
     this.orbitControls.enableDamping = true;
@@ -289,6 +292,15 @@ export class ViewportManager {
     }
   }
 
+  /**
+   * Hide all camera helpers
+   */
+  hideAllCameraHelpers(): void {
+    this.cameraHelpers.forEach((helper) => {
+      helper.visible = false;
+    });
+  }
+
   // -------------------------------------------------------------------------
   // Camera Animation
   // -------------------------------------------------------------------------
@@ -335,16 +347,14 @@ export class ViewportManager {
   createCameraVisual(camera: THREE.Camera): void {
     if (!this.scene) return;
 
-    // Create simplified camera icon
+    // Camera icon (box + arrow)
     const group = new THREE.Group();
 
-    // Camera body
     const bodyGeo = new THREE.BoxGeometry(0.3, 0.2, 0.3);
     const bodyMat = new THREE.MeshBasicMaterial({ color: 0x888888, wireframe: true });
     const body = new THREE.Mesh(bodyGeo, bodyMat);
     group.add(body);
 
-    // Direction arrow
     const arrowGeo = new THREE.ConeGeometry(0.08, 0.2, 4);
     arrowGeo.rotateX(-Math.PI / 2);
     const arrowMat = new THREE.MeshBasicMaterial({ color: 0x0e639c, wireframe: true });
@@ -358,7 +368,7 @@ export class ViewportManager {
     this.scene.add(group);
     this.cameraVisuals.set(camera.uuid, group);
 
-    // Camera helper (hidden by default)
+    // CameraHelper - hidden by default
     const helper = new THREE.CameraHelper(camera);
     helper.name = camera.name + '_helper';
     helper.visible = false;
