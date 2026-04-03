@@ -75,23 +75,32 @@
       background: #333;
       margin: 0 4px;
     }
-    /* 主工作区 */
+    /* 主工作区 - Flexbox 布局 */
     #workspace {
       flex: 1;
       display: flex;
       overflow: hidden;
+      min-width: 0; /* 关键：防止flex子项溢出 */
     }
     /* 左侧面板 - 场景层级 */
     #scene-panel {
-      width: 260px;
+      width: 240px; /* 展开时宽度 */
       min-width: 200px;
-      max-width: 500px;
+      max-width: 400px;
       background: #252526;
       border-right: 1px solid #333;
       display: flex;
       flex-direction: column;
       flex-shrink: 0;
       flex-grow: 0;
+      transition: width 0.2s ease;
+      overflow: hidden;
+    }
+    /* 左侧面板折叠状态 */
+    #scene-panel.collapsed {
+      width: 48px;
+      min-width: 48px;
+      max-width: 48px;
     }
     #scene-panel-header {
       padding: 8px 12px;
@@ -145,20 +154,25 @@
       width: 16px;
       text-align: center;
     }
-    /* 中间视口 */
+    /* 中间视口 - Flex:1 自适应 */
     #viewport-container {
       flex: 1;
       position: relative;
       background: #1e1e1e;
-      min-width: 200px;
+      min-width: 0; /* 关键：防止flex子项溢出 */
       overflow: hidden;
     }
     #viewport {
+      position: absolute;
+      top: 0;
+      left: 0;
       width: 100%;
       height: 100%;
     }
     #viewport canvas {
       display: block;
+      width: 100% !important;
+      height: 100% !important;
     }
     /* 变换控制工具栏 */
     #transform-toolbar {
@@ -191,15 +205,23 @@
     }
     /* 右侧面板 - 属性 */
     #properties-panel {
-      width: 340px;
-      min-width: 300px;
-      max-width: 600px;
+      width: 300px; /* 展开时宽度 */
+      min-width: 250px;
+      max-width: 500px;
       background: #252526;
       border-left: 1px solid #333;
       display: flex;
       flex-direction: column;
       flex-shrink: 0;
       flex-grow: 0;
+      transition: width 0.2s ease;
+      overflow: hidden;
+    }
+    /* 右侧面板折叠状态 */
+    #properties-panel.collapsed {
+      width: 48px;
+      min-width: 48px;
+      max-width: 48px;
     }
     #properties-header {
       padding: 8px 12px;
@@ -614,6 +636,7 @@
       <div class="btn-group">
         <button id="btn-add-cube">+ 立方体</button>
         <button id="btn-add-sphere">+ 球体</button>
+        <button id="btn-add-camera">+ 摄像机</button>
         <button id="btn-import-model" class="primary">📁 导入模型</button>
       </div>
       <div class="separator"></div>
@@ -634,6 +657,7 @@
             <button id="btn-expand-all">展开</button>
             <button id="btn-collapse-all">折叠</button>
           </div>
+          <button class="panel-collapse-btn" id="btn-collapse-left" title="折叠面板">◀</button>
         </div>
         <div id="scene-filter">
           <button class="filter-btn active" id="btn-filter-lights">灯光</button>
@@ -662,6 +686,7 @@
         <div class="panel-tabs">
           <button class="panel-tab active" data-tab="properties">属性</button>
           <button class="panel-tab" data-tab="postprocessing">后处理</button>
+          <button class="panel-collapse-btn" id="btn-collapse-right" title="折叠面板">▶</button>
         </div>
         
         <div id="properties" class="active">
@@ -1035,6 +1060,86 @@
   <input type="file" id="file-input" accept=".json" style="display:none">
   <input type="file" id="model-input" accept=".gltf,.glb,.obj,.fbx" style="display:none">
   
-  <script type="module" src="/apps/editor/src/main.ts"></script>
+  <script type="module" src="/apps/editor/src/main.ts?v=3"></script>
+  
+  <!-- 布局管理脚本 -->
+  <script>
+    // 布局管理器 - 处理面板折叠和 Canvas 自适应
+    (function() {
+      const scenePanel = document.getElementById('scene-panel');
+      const propertiesPanel = document.getElementById('properties-panel');
+      const viewportContainer = document.getElementById('viewport-container');
+      const viewport = document.getElementById('viewport');
+      const btnCollapseLeft = document.getElementById('btn-collapse-left');
+      const btnCollapseRight = document.getElementById('btn-collapse-right');
+      
+      // 使用 ResizeObserver 监听视口容器尺寸变化
+      const resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const { width, height } = entry.contentRect;
+          // 触发 Canvas 尺寸更新事件
+          window.dispatchEvent(new CustomEvent('viewport-resize', { 
+            detail: { width, height } 
+          }));
+        }
+      });
+      
+      // 观察视口容器
+      resizeObserver.observe(viewportContainer);
+      
+      // 左侧面板折叠/展开
+      btnCollapseLeft.addEventListener('click', () => {
+        const isCollapsed = scenePanel.classList.toggle('collapsed');
+        btnCollapseLeft.textContent = isCollapsed ? '▶' : '◀';
+        btnCollapseLeft.title = isCollapsed ? '展开面板' : '折叠面板';
+        // 触发布局更新
+        updateCanvasSize();
+      });
+      
+      // 右侧面板折叠/展开
+      btnCollapseRight.addEventListener('click', () => {
+        const isCollapsed = propertiesPanel.classList.toggle('collapsed');
+        btnCollapseRight.textContent = isCollapsed ? '◀' : '▶';
+        btnCollapseRight.title = isCollapsed ? '展开面板' : '折叠面板';
+        // 切换内容显示
+        const properties = document.getElementById('properties');
+        const postprocessing = document.getElementById('postprocessing-panel');
+        if (properties) properties.style.display = isCollapsed ? 'none' : '';
+        if (postprocessing) postprocessing.style.display = isCollapsed ? 'none' : '';
+        // 隐藏非活动标签
+        document.querySelectorAll('.panel-tab:not(.active)').forEach(tab => {
+          tab.style.display = isCollapsed ? 'none' : '';
+        });
+        updateCanvasSize();
+      });
+      
+      // 更新 Canvas 尺寸
+      function updateCanvasSize() {
+        // 使用 requestAnimationFrame 确保布局已更新
+        requestAnimationFrame(() => {
+          const rect = viewportContainer.getBoundingClientRect();
+          window.dispatchEvent(new CustomEvent('viewport-resize', { 
+            detail: { width: rect.width, height: rect.height } 
+          }));
+        });
+      }
+      
+      // 窗口大小变化时重新计算
+      let resizeTimeout;
+      window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(updateCanvasSize, 100);
+      });
+      
+      // 监听编辑器初始化完成事件
+      window.addEventListener('editor-initialized', () => {
+        console.log('[Layout] Editor initialized, updating canvas size');
+        updateCanvasSize();
+      });
+      
+      // 初始化
+      console.log('[Layout] Layout manager initialized');
+    })();
+  </script>
 </body>
 </html>
