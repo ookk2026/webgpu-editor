@@ -167,6 +167,12 @@ class Editor {
         onMaterialChange: () => this.onMaterialChange(),
         onLightChange: () => this.onLightChange(),
         onCameraChange: () => this.onCameraChange(),
+        onCameraHelperToggle: (visible: boolean) => {
+          const selected = this.viewport.getSelectedObject();
+          if (selected instanceof THREE.Camera) {
+            this.viewport.setCameraHelperVisible(selected, visible);
+          }
+        },
       },
     });
 
@@ -198,9 +204,10 @@ class Editor {
     dirLight.name = 'Directional Light';
     this.scene.add(dirLight);
 
-    // Add default camera to scene with visual representation
+    // Add default camera to scene (no visual representation for default camera)
     this.scene.add(this.camera);
-    this.viewport.createCameraVisual(this.camera);
+    // Don't create visual for default camera - it's the active camera
+    // this.viewport.createCameraVisual(this.camera);
 
     // Refresh UI
     this.ui.getSceneTree().refresh();
@@ -228,8 +235,8 @@ class Editor {
   // -------------------------------------------------------------------------
 
   private onObjectSelected(obj: THREE.Object3D | null): void {
-    // Update viewport
-    this.viewport.attachObject(obj);
+    // Update viewport (camera helpers are hidden by default)
+    this.viewport.attachObject(obj, false);
 
     // Update scene tree
     this.ui.getSceneTree().setSelectedObject(obj);
@@ -237,6 +244,10 @@ class Editor {
     // Update property panel
     if (obj) {
       this.ui.getPropertyPanel().showObjectProperties(obj);
+      // Ensure camera helper toggle is unchecked when selecting a camera
+      if (obj instanceof THREE.Camera) {
+        this.ui.getPropertyPanel().setCameraHelperToggle(false);
+      }
       this.ui.updateStatusMode(`选中: ${obj.name || obj.type}`);
     } else {
       this.ui.getPropertyPanel().showNoSelection();

@@ -20,6 +20,7 @@ export interface PropertyCallbacks {
   onMaterialChange: () => void;
   onLightChange: () => void;
   onCameraChange: () => void;
+  onCameraHelperToggle?: (visible: boolean) => void;
 }
 
 // ============================================================================
@@ -338,6 +339,13 @@ export class PropertyPanel {
     document.getElementById('camera-fov-slider')?.addEventListener('input', update);
     document.getElementById('camera-near')?.addEventListener('change', update);
     document.getElementById('camera-far')?.addEventListener('change', update);
+
+    // Camera helper toggle
+    const helperToggle = document.getElementById('camera-helper-toggle');
+    helperToggle?.addEventListener('change', () => {
+      const visible = (helperToggle as HTMLInputElement).checked;
+      this.callbacks.onCameraHelperToggle?.(visible);
+    });
   }
 
   populateCameraInputs(camera: THREE.PerspectiveCamera): void {
@@ -352,6 +360,14 @@ export class PropertyPanel {
     if (near) near.value = camera.near.toFixed(2);
     if (far) far.value = camera.far.toFixed(1);
     if (aspect) aspect.textContent = camera.aspect.toFixed(2);
+  }
+
+  /**
+   * Update the camera helper toggle checkbox state
+   */
+  setCameraHelperToggle(visible: boolean): void {
+    const helperToggle = document.getElementById('camera-helper-toggle') as HTMLInputElement;
+    if (helperToggle) helperToggle.checked = visible;
   }
 
   readCameraValues(): { fov: number; near: number; far: number } {

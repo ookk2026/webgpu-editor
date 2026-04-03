@@ -92,6 +92,7 @@ export class ViewportManager {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     this.renderer.setPixelRatio(window.devicePixelRatio);
+    this.renderer.setClearColor(0x1e1e1e);
     // NOTE: Disabled due to color rendering issues with post-processing
     // this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NoToneMapping;
@@ -229,7 +230,7 @@ export class ViewportManager {
   // Transform Controls
   // -------------------------------------------------------------------------
 
-  attachObject(obj: THREE.Object3D | null): void {
+  attachObject(obj: THREE.Object3D | null, showCameraHelper = false): void {
     this.selectedObject = obj;
     if (!this.transformControls) return;
 
@@ -242,11 +243,11 @@ export class ViewportManager {
       this.transformControls.visible = true;
       this.transformControls.setSize(this.gizmoSize);
 
-      // Show camera helper if selecting a camera
+      // Show camera helper if selecting a camera and showCameraHelper is true
       if (obj instanceof THREE.Camera) {
         const helper = this.cameraHelpers.get(obj.uuid);
         if (helper) {
-          helper.visible = true;
+          helper.visible = showCameraHelper;
           this.selectedCamera = obj;
         }
       }
@@ -268,6 +269,24 @@ export class ViewportManager {
   adjustGizmoSize(delta: number): void {
     this.gizmoSize = Math.max(0.1, Math.min(2.0, this.gizmoSize + delta));
     this.transformControls?.setSize(this.gizmoSize);
+  }
+
+  /**
+   * Check if the camera helper is visible for a specific camera
+   */
+  isCameraHelperVisible(camera: THREE.Camera): boolean {
+    const helper = this.cameraHelpers.get(camera.uuid);
+    return helper ? helper.visible : false;
+  }
+
+  /**
+   * Set the visibility of a camera helper
+   */
+  setCameraHelperVisible(camera: THREE.Camera, visible: boolean): void {
+    const helper = this.cameraHelpers.get(camera.uuid);
+    if (helper) {
+      helper.visible = visible;
+    }
   }
 
   // -------------------------------------------------------------------------

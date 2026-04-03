@@ -459,6 +459,10 @@ export class PostProcessingManager {
         this.settings = { ...DEFAULT_SETTINGS, ...parsed };
         // Always disable SSAO on startup to prevent visual artifacts
         this.settings.ssaoEnabled = false;
+        // Ensure background color is valid (not blue)
+        if (!this.settings.bgColor || this.settings.bgColor.includes('00f') || this.settings.bgColor === '#0000ff') {
+          this.settings.bgColor = '#1e1e1e';
+        }
       }
     } catch (e) {
       console.warn('Failed to load post-processing settings:', e);
