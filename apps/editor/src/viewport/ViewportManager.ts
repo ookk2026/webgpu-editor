@@ -99,7 +99,8 @@ export class ViewportManager {
     this.container.appendChild(this.renderer.domElement);
 
     // Ensure all camera helpers are hidden initially
-    this.hideAllCameraHelpers();
+    // Use timeout to ensure this runs after all objects are created
+    setTimeout(() => this.hideAllCameraHelpers(), 100);
 
     // Setup orbit controls
     this.orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
