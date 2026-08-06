@@ -91,6 +91,12 @@ export class ResponsiveLayout {
   private startX = 0;
   private startWidth = 0;
 
+  // Re-entrancy guard: prevents handleResize -> onLayoutChange -> (synthetic
+  // resize event) -> handleResize infinite recursion
+  private isHandlingResize = false;
+  // Remember the last "window too small" warning state to avoid console spam
+  private lastTooSmallWarning = false;
+
   // Storage key
   private storageKey = 'editor-layout-state';
 
@@ -295,20 +301,32 @@ export class ResponsiveLayout {
     // NOTE: Panel widths are now fixed and won't auto-adjust on window resize
     // Users can manually resize panels using the sash handles (⋮⋮)
     // or reset layout with Shift+R
-    
-    // Only ensure panels don't exceed window bounds when absolutely necessary
-    const width = window.innerWidth;
-    const totalPanelWidth = (this.leftCollapsed ? 48 : this.leftWidth) + 
-                           (this.rightCollapsed ? 48 : this.rightWidth);
-    
-    // If window is smaller than total panels + minimum viewport, warn but don't auto-adjust
-    // Let the user handle it with scroll or manual collapse
-    if (totalPanelWidth + 200 > width) {
-      console.warn('[ResponsiveLayout] Window too small for current panel widths. Use Shift+R to reset.');
+
+    // Guard against re-entrancy: onLayoutChange may dispatch a synthetic
+    // resize event, which would invoke this handler again synchronously
+    if (this.isHandlingResize) return;
+    this.isHandlingResize = true;
+
+    try {
+      // Only ensure panels don't exceed window bounds when absolutely necessary
+      const width = window.innerWidth;
+      const totalPanelWidth = (this.leftCollapsed ? 48 : this.leftWidth) + 
+                             (this.rightCollapsed ? 48 : this.rightWidth);
+      
+      // If window is smaller than total panels + minimum viewport, warn but don't auto-adjust
+      // Let the user handle it with scroll or manual collapse.
+      // Warn only on state change to avoid spamming the console.
+      const tooSmall = totalPanelWidth + 200 > width;
+      if (tooSmall && !this.lastTooSmallWarning) {
+        console.warn('[ResponsiveLayout] Window too small for current panel widths. Use Shift+R to reset.');
+      }
+      this.lastTooSmallWarning = tooSmall;
+      
+      // Just notify about layout change for viewport resize
+      this.callbacks.onLayoutChange?.();
+    } finally {
+      this.isHandlingResize = false;
     }
-    
-    // Just notify about layout change for viewport resize
-    this.callbacks.onLayoutChange?.();
   }
 
   setupGlobalEvents(): void {

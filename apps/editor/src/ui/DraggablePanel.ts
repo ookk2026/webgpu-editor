@@ -41,6 +41,7 @@ export class DraggablePanel {
   private options: Required<DraggablePanelOptions>;
   
   private isDragging = false;
+  private enabled = false;
   private startPos = { x: 0, y: 0 };
   private startMouse = { x: 0, y: 0 };
   private currentPos = { x: 0, y: 0 };
@@ -87,10 +88,12 @@ export class DraggablePanel {
   // -------------------------------------------------------------------------
 
   private init(): void {
-    // Make panel position absolute/fixed for dragging
+    // Ensure the panel is positioned so left/top can be applied.
+    // Use 'relative' (not 'absolute') to keep the panel in the flex flow;
+    // applyPosition() converts viewport coords into the right space.
     const currentPosition = window.getComputedStyle(this.element).position;
     if (currentPosition === 'static') {
-      this.element.style.position = 'absolute';
+      this.element.style.position = 'relative';
     }
 
     // Add drag handle cursor
@@ -107,13 +110,8 @@ export class DraggablePanel {
     document.addEventListener('touchmove', this.onTouchMove.bind(this), { passive: false });
     document.addEventListener('touchend', this.onMouseUp.bind(this));
 
-    // Load saved position
-    if (this.options.savePosition) {
-      this.loadPosition();
-    }
-
-    // Initial boundary check
-    this.constrainToBounds();
+    // Panels start disabled; saved position is restored in enable()
+    // so it never affects the normal responsive layout.
   }
 
   // -------------------------------------------------------------------------
@@ -121,6 +119,9 @@ export class DraggablePanel {
   // -------------------------------------------------------------------------
 
   private onMouseDown(e: MouseEvent): void {
+    // Ignore drags while the panel is disabled (responsive layout mode)
+    if (!this.enabled) return;
+
     // Don't drag if clicking on interactive elements
     const target = e.target as HTMLElement;
     if (target.tagName === 'BUTTON' || 
@@ -212,8 +213,31 @@ export class DraggablePanel {
   }
 
   private applyPosition(pos: PanelPosition): void {
-    this.element.style.left = `${pos.x}px`;
-    this.element.style.top = `${pos.y}px`;
+    // pos is in viewport coordinates (from getBoundingClientRect).
+    // Convert them to the coordinate space of the element's left/top.
+    const computed = window.getComputedStyle(this.element).position;
+
+    if (computed === 'relative') {
+      // For position:relative, left/top are offsets from the element's own
+      // static (flow) position - not absolute coordinates. Derive the static
+      // position from the current rect and current offsets first.
+      const rect = this.element.getBoundingClientRect();
+      const curLeft = parseFloat(this.element.style.left) || 0;
+      const curTop = parseFloat(this.element.style.top) || 0;
+      const staticLeft = rect.left - curLeft;
+      const staticTop = rect.top - curTop;
+      this.element.style.left = `${pos.x - staticLeft}px`;
+      this.element.style.top = `${pos.y - staticTop}px`;
+    } else {
+      // For position:absolute/fixed, convert viewport coords to the
+      // containing block's coordinate space.
+      const parent = this.element.offsetParent as HTMLElement | null;
+      const parentLeft = computed === 'fixed' || !parent ? 0 : parent.getBoundingClientRect().left;
+      const parentTop = computed === 'fixed' || !parent ? 0 : parent.getBoundingClientRect().top;
+      this.element.style.left = `${pos.x - parentLeft}px`;
+      this.element.style.top = `${pos.y - parentTop}px`;
+    }
+
     this.element.style.right = 'auto';
     this.element.style.bottom = 'auto';
   }
@@ -321,10 +345,18 @@ export class DraggablePanel {
   }
 
   enable(): void {
+    this.enabled = true;
     this.handle.style.cursor = 'move';
+
+    // Restore saved position only while dragging is active
+    if (this.options.savePosition) {
+      this.loadPosition();
+    }
+    this.constrainToBounds();
   }
 
   disable(): void {
+    this.enabled = false;
     this.handle.style.cursor = '';
     this.isDragging = false;
   }

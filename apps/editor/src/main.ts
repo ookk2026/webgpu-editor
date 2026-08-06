@@ -57,6 +57,10 @@ class Editor {
   private currentTransformCmd: TransformCommand | null = null;
   private currentMaterialCmd: MaterialChangeCommand | null = null;
 
+  // FPS tracking
+  private fpsFrameCount = 0;
+  private fpsLastTime = 0;
+
   constructor() {
     this.init();
   }
@@ -212,7 +216,7 @@ class Editor {
 
     // Refresh UI
     this.ui.getSceneTree().refresh();
-    this.ui.updateStatusObjects(0);
+    this.updateObjectCount();
   }
 
   // -------------------------------------------------------------------------
@@ -229,6 +233,28 @@ class Editor {
 
     // Render viewport with post-processing
     this.viewport.render(() => this.postProcessing.render());
+
+    // Update FPS counter
+    this.updateFPS();
+  }
+
+  private updateFPS(): void {
+    if (this.fpsLastTime === 0) {
+      this.fpsLastTime = performance.now();
+      return;
+    }
+
+    this.fpsFrameCount++;
+    const now = performance.now();
+    const elapsed = now - this.fpsLastTime;
+
+    // Update status bar once per second
+    if (elapsed >= 1000) {
+      const fps = Math.round((this.fpsFrameCount * 1000) / elapsed);
+      this.ui.updateStatusFPS(fps);
+      this.fpsFrameCount = 0;
+      this.fpsLastTime = now;
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -420,11 +446,22 @@ class Editor {
 
   private updateObjectCount(): void {
     let count = 0;
-    this.scene.traverse((o) => {
+
+    const countSubtree = (o: THREE.Object3D) => {
       if (o instanceof THREE.Mesh || o instanceof THREE.Light || o instanceof THREE.Camera) {
         count++;
       }
-    });
+      for (const child of o.children) countSubtree(child);
+    };
+
+    // Only count user objects: skip transform gizmo, grid and helper subtrees
+    for (const child of this.scene.children) {
+      if (child === this.viewport.getTransformControls()) continue;
+      if (child instanceof THREE.GridHelper || child instanceof THREE.AxesHelper) continue;
+      if (child.name?.endsWith('_helper') || child.name?.endsWith('_visual')) continue;
+      countSubtree(child);
+    }
+
     this.ui.updateStatusObjects(count);
   }
 
@@ -579,6 +616,10 @@ class Editor {
   // -------------------------------------------------------------------------
 
   private onViewportResize(): void {
+    // Guard: viewport callbacks can fire during initialization,
+    // before the UI manager and post-processing are created
+    if (!this.ui || !this.postProcessing) return;
+
     const size = this.ui.getViewportSize();
     this.postProcessing.resize(size.width, size.height);
   }

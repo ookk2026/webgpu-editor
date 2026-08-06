@@ -60,6 +60,10 @@ export class ViewportManager {
   private cameraVisuals = new Map<string, THREE.Object3D>();
   private cameraHelpers = new Map<string, THREE.CameraHelper>();
 
+  // Selection proxies: invisible meshes that make objects without pickable
+  // geometry (lights, cameras) clickable in the viewport
+  private pickProxies = new Map<string, THREE.Mesh>();
+
   // Animation
   private isCameraAnimating = false;
   private camAnim = {
@@ -156,6 +160,7 @@ export class ViewportManager {
     if (!this.renderer || !this.scene || !this.camera) return;
 
     this.orbitControls?.update();
+    this.updatePickProxies();
 
     // Update camera animation
     if (this.isCameraAnimating) {
@@ -191,11 +196,29 @@ export class ViewportManager {
       this.scene!.traverse((o) => {
         if (this.isSelectable(o)) objs.push(o);
       });
+      // Include invisible selection proxies (clickable targets for lights/cameras)
+      this.pickProxies.forEach((proxy) => {
+        if (proxy.visible) objs.push(proxy);
+      });
 
       const hits = this.raycaster.intersectObjects(objs, false);
 
       if (hits.length > 0) {
-        let target = hits[0].object;
+        const hit = hits[0].object;
+
+        // If the hit is a selection proxy, resolve to the real light/camera
+        let node: THREE.Object3D | null = hit;
+        while (node) {
+          const proxied = node.userData.__selectTarget as THREE.Object3D | undefined;
+          if (proxied) {
+            this.callbacks.onSelect(proxied);
+            return;
+          }
+          node = node.parent;
+        }
+
+        // Otherwise walk up to the top-level scene object
+        let target = hit;
         while (
           target.parent &&
           target.parent !== this.scene &&
@@ -212,6 +235,9 @@ export class ViewportManager {
 
   private isSelectable(obj: THREE.Object3D): boolean {
     if (!obj.visible) return false;
+
+    // Selection proxies are raycast separately and resolved to their target
+    if (obj.userData.isPickProxy) return false;
 
     // Check if it's a child of transform controls
     let p = obj.parent;
@@ -391,6 +417,52 @@ export class ViewportManager {
       const camera = this.scene?.getObjectByProperty('uuid', uuid) as THREE.Camera;
       if (camera && helper.visible) {
         helper.update();
+      }
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Selection Proxies (clickable targets for lights/cameras)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Register an invisible pick proxy so an object without raycastable geometry
+   * (lights, cameras) can be selected by clicking in the viewport.
+   */
+  registerPickProxy(target: THREE.Object3D): void {
+    if (!this.scene || this.pickProxies.has(target.uuid)) return;
+
+    const proxy = new THREE.Mesh(
+      new THREE.SphereGeometry(0.5, 8, 6),
+      new THREE.MeshBasicMaterial({ visible: false })
+    );
+    proxy.name = (target.name || target.type) + '_pick';
+    proxy.userData.isPickProxy = true;
+    proxy.userData.__selectTarget = target;
+    target.getWorldPosition(proxy.position);
+
+    this.scene.add(proxy);
+    this.pickProxies.set(target.uuid, proxy);
+  }
+
+  unregisterPickProxy(uuid: string): void {
+    const proxy = this.pickProxies.get(uuid);
+    if (!proxy) return;
+    this.scene?.remove(proxy);
+    proxy.geometry.dispose();
+    (proxy.material as THREE.Material).dispose();
+    this.pickProxies.delete(uuid);
+  }
+
+  private updatePickProxies(): void {
+    if (!this.scene) return;
+    this.pickProxies.forEach((proxy, uuid) => {
+      const target = this.scene!.getObjectByProperty('uuid', uuid);
+      if (target) {
+        target.getWorldPosition(proxy.position);
+        proxy.visible = target.visible;
+      } else {
+        proxy.visible = false;
       }
     });
   }
