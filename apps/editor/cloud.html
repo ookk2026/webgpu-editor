@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>云朵效果 Demo - WebGPU Editor</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; font-family: system-ui, sans-serif; background: #7ec8e3; }
+    #canvas { width: 100%; height: 100%; display: block; }
+
+    #info {
+      position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+      background: rgba(10, 30, 50, 0.55); color: #eaf6ff;
+      padding: 8px 18px; border-radius: 20px; font-size: 13px;
+      backdrop-filter: blur(8px); letter-spacing: 0.5px; pointer-events: none;
+      white-space: nowrap; box-shadow: 0 2px 12px rgba(0,0,0,0.15); z-index: 5;
+    }
+    #info b { color: #ffd98a; font-weight: 600; }
+    #stats {
+      position: fixed; bottom: 14px; right: 16px;
+      color: rgba(255,255,255,0.85); font-size: 12px;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.4); pointer-events: none; z-index: 5;
+    }
+    #loading {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(180deg, #5eb3e0 0%, #a8d8ee 100%);
+      color: #ffffff; font-size: 15px; z-index: 10; transition: opacity 0.6s;
+    }
+    #loading.hide { opacity: 0; pointer-events: none; }
+
+    /* ---------- 控制面板 ---------- */
+    #panel {
+      position: fixed; top: 14px; right: 14px; width: 252px; z-index: 6;
+      background: rgba(16, 26, 38, 0.78); color: #e8f1f8;
+      border-radius: 12px; backdrop-filter: blur(12px);
+      box-shadow: 0 8px 30px rgba(0,0,0,0.35); overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.08); font-size: 12px;
+    }
+    #panel.collapsed #panel-body { display: none; }
+    #panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 12px; cursor: pointer; user-select: none;
+      background: rgba(255,255,255,0.06); font-weight: 500; font-size: 13px;
+    }
+    #panel-header .dot { color: #7cc4ff; margin-right: 6px; }
+    #panel-toggle {
+      background: none; border: none; color: #9fb4c8; font-size: 14px;
+      cursor: pointer; padding: 2px 6px; border-radius: 4px; line-height: 1;
+    }
+    #panel-toggle:hover { background: rgba(255,255,255,0.12); color: #fff; }
+    #panel-body { padding: 8px 12px 12px; max-height: calc(100vh - 90px); overflow-y: auto; }
+
+    .group { margin-top: 10px; }
+    .group:first-child { margin-top: 4px; }
+    .group-title {
+      font-size: 11px; color: #7cc4ff; letter-spacing: 1px;
+      margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.08);
+      display: flex; align-items: center; gap: 6px;
+    }
+    .group-title .sw { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+    .row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .row label { flex: 0 0 58px; color: #b8c9d8; }
+    .row input[type="range"] {
+      flex: 1; appearance: none; -webkit-appearance: none; height: 3px;
+      background: rgba(255,255,255,0.18); border-radius: 2px; outline: none; cursor: pointer;
+    }
+    .row input[type="range"]::-webkit-slider-thumb {
+      appearance: none; -webkit-appearance: none; width: 12px; height: 12px;
+      border-radius: 50%; background: #7cc4ff; border: 2px solid rgba(255,255,255,0.85);
+      cursor: pointer;
+    }
+    .row input[type="range"]::-moz-range-thumb {
+      width: 12px; height: 12px; border-radius: 50%; background: #7cc4ff;
+      border: 2px solid rgba(255,255,255,0.85); cursor: pointer;
+    }
+    .row .val { flex: 0 0 34px; text-align: right; color: #dce9f4; font-size: 11px; }
+    .row .val.wide { flex-basis: 52px; }
+
+    .row input[type="color"] {
+      flex: 1; height: 24px; border: none; border-radius: 4px;
+      background: transparent; cursor: pointer; padding: 0;
+    }
+    .row input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+    .row input[type="color"]::-webkit-color-swatch { border: 1px solid rgba(255,255,255,0.25); border-radius: 4px; }
+
+    .switch { position: relative; flex: 0 0 auto; width: 34px; height: 18px; }
+    .switch input { display: none; }
+    .switch .track {
+      position: absolute; inset: 0; border-radius: 9px;
+      background: rgba(255,255,255,0.16); transition: 0.25s; cursor: pointer;
+    }
+    .switch .track::after {
+      content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+      border-radius: 50%; background: #c8d8e6; transition: 0.25s;
+    }
+    .switch input:checked + .track { background: #2f9de0; }
+    .switch input:checked + .track::after { left: 18px; background: #fff; }
+
+    .row .btn {
+      flex: 1; padding: 5px 0; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px;
+      background: rgba(255,255,255,0.08); color: #dce9f4; cursor: pointer; font-size: 11px;
+      transition: 0.2s; text-align: center;
+    }
+    .row .btn:hover { background: rgba(124,196,255,0.25); border-color: #7cc4ff; }
+
+    @media (max-width: 720px) {
+      #panel { width: 220px; }
+      #info { font-size: 11px; padding: 6px 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="loading">☁ 云朵生成中...</div>
+  <canvas id="canvas"></canvas>
+  <div id="info">☁ 云朵效果 · 鼠标拖动旋转 · 滚轮缩放 · <b>右键拖动</b>平移</div>
+  <div id="stats"></div>
+
+  <!-- 控制面板 -->
+  <div id="panel">
+    <div id="panel-header">
+      <span><span class="dot">◆</span>云朵参数控制</span>
+      <button id="panel-toggle">−</button>
+    </div>
+    <div id="panel-body">
+
+      <div class="group">
+        <div class="group-title"><span class="sw" style="background:#e8f4ff"></span>云朵</div>
+        <div class="row">
+          <label>显示云朵</label>
+          <div style="flex:1"></div>
+          <span class="switch"><input type="checkbox" id="ctl-show-clouds" checked><span class="track"></span></span>
+        </div>
+        <div class="row">
+          <label>云朵数量</label>
+          <input type="range" id="ctl-cloud-count" min="4" max="26" step="1" value="14">
+          <span class="val" id="ctl-cloud-count-val">14</span>
+        </div>
+        <div class="row">
+          <label>云朵大小</label>
+          <input type="range" id="ctl-cloud-size" min="0.3" max="2.0" step="0.05" value="1.0">
+          <span class="val" id="ctl-cloud-size-val">1.0</span>
+        </div>
+        <div class="row">
+          <label>棉团密度</label>
+          <input type="range" id="ctl-cloud-density" min="0.3" max="1.6" step="0.05" value="1.0">
+          <span class="val" id="ctl-cloud-density-val">1.0</span>
+        </div>
+        <div class="row">
+          <label>云朵不透明</label>
+          <input type="range" id="ctl-cloud-opacity" min="0.1" max="1.0" step="0.02" value="1.0">
+          <span class="val" id="ctl-cloud-opacity-val">1.0</span>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title"><span class="sw" style="background:#8fdcff"></span>动画</div>
+        <div class="row">
+          <label>漂移速度</label>
+          <input type="range" id="ctl-speed" min="0" max="4.0" step="0.05" value="1.0">
+          <span class="val" id="ctl-speed-val">1.0</span>
+        </div>
+        <div class="row">
+          <label>浮动幅度</label>
+          <input type="range" id="ctl-bob" min="0" max="3.0" step="0.05" value="1.0">
+          <span class="val" id="ctl-bob-val">1.0</span>
+        </div>
+        <div class="row">
+          <label>自动旋转</label>
+          <div style="flex:1"></div>
+          <span class="switch"><input type="checkbox" id="ctl-auto-rotate" checked><span class="track"></span></span>
+        </div>
+        <div class="row">
+          <label>旋转速度</label>
+          <input type="range" id="ctl-rotate-speed" min="0" max="3.0" step="0.1" value="0.4">
+          <span class="val" id="ctl-rotate-speed-val">0.4</span>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title"><span class="sw" style="background:#ffd98a"></span>太阳</div>
+        <div class="row">
+          <label>显示太阳</label>
+          <div style="flex:1"></div>
+          <span class="switch"><input type="checkbox" id="ctl-show-sun" checked><span class="track"></span></span>
+        </div>
+        <div class="row">
+          <label>太阳强度</label>
+          <input type="range" id="ctl-sun-intensity" min="0" max="4.0" step="0.05" value="2.2">
+          <span class="val" id="ctl-sun-intensity-val">2.2</span>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title"><span class="sw" style="background:#a8d4ee"></span>天空</div>
+        <div class="row">
+          <label>顶部颜色</label>
+          <input type="color" id="ctl-sky-top" value="#3f8fd2">
+        </div>
+        <div class="row">
+          <label>底部颜色</label>
+          <input type="color" id="ctl-sky-bottom" value="#d8ecf7">
+        </div>
+        <div class="row">
+          <label>雾浓度</label>
+          <input type="range" id="ctl-fog" min="0" max="1.0" step="0.01" value="1.0">
+          <span class="val" id="ctl-fog-val">1.0</span>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="row" style="margin-top:4px">
+          <button class="btn" id="ctl-randomize">🎲 随机云形</button>
+          <button class="btn" id="ctl-reset">↺ 重置参数</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // ------------------------------------------------------------------
+    // 基础场景
+    // ------------------------------------------------------------------
+    const canvas = document.getElementById('canvas');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+
+    const scene = new THREE.Scene();
+
+    // 天空渐变贴图（程序化）
+    const skyCanvas = document.createElement('canvas');
+    skyCanvas.width = 2; skyCanvas.height = 256;
+    const sctx = skyCanvas.getContext('2d');
+    const skyTex = new THREE.CanvasTexture(skyCanvas);
+    scene.background = skyTex;
+    scene.fog = new THREE.Fog(0xa8d4ee, 120, 380);
+
+    function updateSky(topColor, bottomColor, fogAmount) {
+      const g = sctx.createLinearGradient(0, 0, 0, 256);
+      g.addColorStop(0.0, topColor);
+      g.addColorStop(0.35, topColor);
+      g.addColorStop(0.65, bottomColor);
+      g.addColorStop(1.0, bottomColor);
+      sctx.fillStyle = g;
+      sctx.fillRect(0, 0, 2, 256);
+      skyTex.needsUpdate = true;
+      scene.fog.near = 120 * fogAmount;
+      scene.fog.far = 380 * fogAmount;
+      // 雾色取底部与白色中间，视觉更柔和
+      const c = new THREE.Color(bottomColor).lerp(new THREE.Color('#ffffff'), 0.35);
+      scene.fog.color.copy(c);
+    }
+
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 800);
+    camera.position.set(0, 22, 62);
+
+    const controls = new OrbitControls(camera, canvas);
+    controls.target.set(0, 14, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.maxPolarAngle = Math.PI * 0.48;
+    controls.minDistance = 10;
+    controls.maxDistance = 200;
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.4;
+
+    // ------------------------------------------------------------------
+    // 太阳
+    // ------------------------------------------------------------------
+    const sun = new THREE.DirectionalLight(0xfff3d6, 2.2);
+    sun.position.set(-60, 80, 40);
+    scene.add(sun);
+    scene.add(new THREE.AmbientLight(0xcfe8ff, 0.9));
+
+    function makeGlowTexture(inner, outer, size = 256) {
+      const c = document.createElement('canvas');
+      c.width = c.height = size;
+      const ctx = c.getContext('2d');
+      const g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+      g.addColorStop(0.0, inner);
+      g.addColorStop(0.25, outer);
+      g.addColorStop(1.0, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, size, size);
+      return new THREE.CanvasTexture(c);
+    }
+
+    const sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: makeGlowTexture('rgba(255,250,225,1)', 'rgba(255,236,180,0.85)'),
+      transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending
+    }));
+    sunSprite.scale.set(34, 34, 1);
+    sunSprite.position.copy(sun.position);
+    scene.add(sunSprite);
+
+    // ------------------------------------------------------------------
+    // 云朵粒子系统
+    // ------------------------------------------------------------------
+    function makePuffTexture(size = 128) {
+      const c = document.createElement('canvas');
+      c.width = c.height = size;
+      const ctx = c.getContext('2d');
+      const g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+      g.addColorStop(0.0, 'rgba(255,255,255,1)');
+      g.addColorStop(0.4, 'rgba(255,255,255,0.75)');
+      g.addColorStop(0.75, 'rgba(255,255,255,0.28)');
+      g.addColorStop(1.0, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, size, size);
+      return new THREE.CanvasTexture(c);
+    }
+    const puffTex = makePuffTexture();
+
+    function mulberry32(seed) {
+      return function () {
+        seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+        let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    // 一朵云 = 主体层 + 底部阴影层，两层各含若干 Sprite
+    const clouds = [];        // 云元数据（动画用）
+    const cloudRoot = new THREE.Group();
+    scene.add(cloudRoot);
+
+    // 基础云位置模板：环形铺开，y 在 12~19
+    function baseCloudPositions(count) {
+      const rand = mulberry32(2026);
+      const pos = [];
+      for (let i = 0; i < count; i++) {
+        const angle = (i / count) * Math.PI * 2 + rand() * 0.5;
+        const radius = 26 + rand() * 30;
+        pos.push({
+          x: Math.cos(angle) * radius,
+          y: 12 + rand() * 7,
+          z: Math.sin(angle) * radius,
+          spread: 4.2 + rand() * 2.8,
+          n: 28 + Math.floor(rand() * 20)
+        });
+      }
+      return pos;
+    }
+
+    function buildCloudPuffs(rand, baseX, baseY, baseZ, spread, count) {
+      const puffs = [];
+      for (let i = 0; i < count; i++) {
+        const theta = rand() * Math.PI * 2;
+        const phi = Math.acos(2 * rand() - 1);
+        const rx = (0.35 + rand() * 0.65) * spread;
+        const ry = (0.22 + rand() * 0.42) * spread * 0.55;
+        const rz = (0.3 + rand() * 0.6) * spread * 0.85;
+        const dx = Math.sin(phi) * Math.cos(theta) * rx * 1.6;
+        const dy = Math.cos(phi) * ry + (rand() - 0.5) * spread * 0.12;
+        const dz = Math.sin(phi) * Math.sin(theta) * rz * 1.2;
+        const edge = Math.sqrt(dx*dx + dz*dz) / (spread * 1.6);
+        puffs.push({
+          dx, dy, dz,
+          r: (0.9 + rand() * 1.5) * (1 - edge * 0.35),
+          opacity: 0.35 + rand() * 0.45,
+          scale: 1 + rand() * 1.4
+        });
+      }
+      return puffs;
+    }
+
+    let state = {
+      seedOffset: 0,
+      cloudCount: 14,
+      cloudSize: 1.0,
+      density: 1.0,
+      opacity: 1.0,
+      speed: 1.0,
+      bob: 1.0,
+      showClouds: true,
+    };
+
+    function rebuildClouds() {
+      // 清空旧云
+      while (cloudRoot.children.length) {
+        const g = cloudRoot.children[0];
+        g.traverse(obj => {
+          if (obj.material) {
+            obj.material.map && obj.material.map.dispose();
+            obj.material.dispose();
+          }
+        });
+        cloudRoot.remove(g);
+      }
+      clouds.length = 0;
+
+      const count = state.cloudCount;
+      const positions = baseCloudPositions(count);
+      let totalPuffs = 0;
+
+      positions.forEach((cfg, idx) => {
+        const rand = mulberry32(1000 + idx * 77 + state.seedOffset * 131);
+        const n = Math.max(8, Math.round(cfg.n * state.density));
+        const puffs = buildCloudPuffs(rand, cfg.x, cfg.y, cfg.z, cfg.spread * state.cloudSize, n);
+        const group = new THREE.Group();
+
+        puffs.forEach(p => {
+          const s = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: puffTex, transparent: true, depthWrite: false,
+            opacity: p.opacity * state.opacity, color: 0xffffff
+          }));
+          s.userData.baseOpacity = p.opacity * state.opacity;   // 记录基础透明度（供边缘淡入淡出）
+          s.position.set(p.dx, p.dy, p.dz);
+          const r = p.r * p.scale * 2.2 * state.cloudSize;
+          s.scale.set(r, r * 0.72, 1);
+          group.add(s);
+        });
+        puffs.forEach(p => {
+          const s = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: puffTex, transparent: true, depthWrite: false,
+            opacity: p.opacity * 0.28 * state.opacity, color: 0x9db8cc
+          }));
+          s.userData.baseOpacity = p.opacity * 0.28 * state.opacity;
+          s.position.set(p.dx, p.dy - p.r * 0.55 * state.cloudSize, p.dz);
+          const r = p.r * p.scale * 2.4 * state.cloudSize;
+          s.scale.set(r, r * 0.6, 1);
+          group.add(s);
+        });
+
+        cloudRoot.add(group);
+        clouds.push({
+          group,
+          baseX: cfg.x, baseY: cfg.y, baseZ: cfg.z,
+          baseSpeed: 0.35 + rand() * 0.5,
+          phase: rand() * Math.PI * 2,
+          baseBob: 0.4 + rand() * 0.8
+        });
+        totalPuffs += puffs.length * 2;
+      });
+
+      document.getElementById('stats').textContent =
+        `${totalPuffs} 个云粒子 · three.js r160`;
+    }
+
+    // ------------------------------------------------------------------
+    // 控制面板
+    // ------------------------------------------------------------------
+    const $ = id => document.getElementById(id);
+
+    function bindSlider(id, valId, onChange, fmt = v => v.toFixed(2)) {
+      const input = $(id), val = $(valId);
+      const update = () => {
+        const v = parseFloat(input.value);
+        val.textContent = fmt(v);
+        onChange(v);
+      };
+      input.addEventListener('input', update);
+      return update;
+    }
+
+    const DEFAULTS = {
+      cloudCount: 14, cloudSize: 1.0, density: 1.0, opacity: 1.0,
+      speed: 1.0, bob: 1.0, autoRotate: true, rotateSpeed: 0.4,
+      showSun: true, sunIntensity: 2.2,
+      skyTop: '#3f8fd2', skyBottom: '#d8ecf7', fog: 1.0,
+    };
+    let params = { ...DEFAULTS };
+
+    function applyAll() {
+      // 云
+      state.cloudCount = params.cloudCount;
+      state.cloudSize = params.cloudSize;
+      state.density = params.density;
+      state.opacity = params.opacity;
+      state.showClouds = $('ctl-show-clouds').checked;
+      rebuildClouds();
+      // 动画
+      controls.autoRotate = params.autoRotate;
+      controls.autoRotateSpeed = params.rotateSpeed;
+      // 太阳
+      sun.visible = params.showSun;
+      sunSprite.visible = params.showSun;
+      sun.intensity = params.sunIntensity;
+      sunSprite.material.opacity = Math.min(1, params.sunIntensity / 3.2);
+      // 天空
+      updateSky(params.skyTop, params.skyBottom, params.fog);
+    }
+
+    function bindAll() {
+      // 云朵
+      bindSlider('ctl-cloud-count', 'ctl-cloud-count-val',
+        v => { params.cloudCount = v; state.cloudCount = v; rebuildClouds(); }, v => String(v));
+      bindSlider('ctl-cloud-size', 'ctl-cloud-size-val',
+        v => { params.cloudSize = v; state.cloudSize = v; rebuildClouds(); });
+      bindSlider('ctl-cloud-density', 'ctl-cloud-density-val',
+        v => { params.density = v; state.density = v; rebuildClouds(); });
+      bindSlider('ctl-cloud-opacity', 'ctl-cloud-opacity-val',
+        v => { params.opacity = v; state.opacity = v; rebuildClouds(); });
+      $('ctl-show-clouds').addEventListener('change', e => {
+        state.showClouds = e.target.checked;
+        cloudRoot.visible = state.showClouds;
+      });
+      // 动画
+      bindSlider('ctl-speed', 'ctl-speed-val',
+        v => { params.speed = v; state.speed = v; });
+      bindSlider('ctl-bob', 'ctl-bob-val',
+        v => { params.bob = v; state.bob = v; });
+      $('ctl-auto-rotate').addEventListener('change', e => {
+        params.autoRotate = e.target.checked;
+        controls.autoRotate = e.target.checked;
+      });
+      bindSlider('ctl-rotate-speed', 'ctl-rotate-speed-val',
+        v => { params.rotateSpeed = v; controls.autoRotateSpeed = v; });
+      // 太阳
+      $('ctl-show-sun').addEventListener('change', e => {
+        params.showSun = e.target.checked;
+        sun.visible = e.target.checked;
+        sunSprite.visible = e.target.checked;
+      });
+      bindSlider('ctl-sun-intensity', 'ctl-sun-intensity-val',
+        v => {
+          params.sunIntensity = v;
+          sun.intensity = v;
+          sunSprite.material.opacity = Math.min(1, v / 3.2);
+        });
+      // 天空
+      $('ctl-sky-top').addEventListener('input', e => {
+        params.skyTop = e.target.value;
+        updateSky(params.skyTop, params.skyBottom, params.fog);
+      });
+      $('ctl-sky-bottom').addEventListener('input', e => {
+        params.skyBottom = e.target.value;
+        updateSky(params.skyTop, params.skyBottom, params.fog);
+      });
+      bindSlider('ctl-fog', 'ctl-fog-val',
+        v => { params.fog = v; updateSky(params.skyTop, params.skyBottom, v); });
+      // 随机/重置
+      $('ctl-randomize').addEventListener('click', () => {
+        state.seedOffset = Math.floor(Math.random() * 10000);
+        rebuildClouds();
+      });
+      $('ctl-reset').addEventListener('click', () => {
+        params = { ...DEFAULTS };
+        $('ctl-cloud-count').value = DEFAULTS.cloudCount;
+        $('ctl-cloud-count-val').textContent = DEFAULTS.cloudCount;
+        $('ctl-cloud-size').value = DEFAULTS.cloudSize;
+        $('ctl-cloud-size-val').textContent = DEFAULTS.cloudSize.toFixed(2);
+        $('ctl-cloud-density').value = DEFAULTS.density;
+        $('ctl-cloud-density-val').textContent = DEFAULTS.density.toFixed(2);
+        $('ctl-cloud-opacity').value = DEFAULTS.opacity;
+        $('ctl-cloud-opacity-val').textContent = DEFAULTS.opacity.toFixed(2);
+        $('ctl-speed').value = DEFAULTS.speed;
+        $('ctl-speed-val').textContent = DEFAULTS.speed.toFixed(2);
+        $('ctl-bob').value = DEFAULTS.bob;
+        $('ctl-bob-val').textContent = DEFAULTS.bob.toFixed(2);
+        $('ctl-rotate-speed').value = DEFAULTS.rotateSpeed;
+        $('ctl-rotate-speed-val').textContent = DEFAULTS.rotateSpeed.toFixed(2);
+        $('ctl-sun-intensity').value = DEFAULTS.sunIntensity;
+        $('ctl-sun-intensity-val').textContent = DEFAULTS.sunIntensity.toFixed(2);
+        $('ctl-fog').value = DEFAULTS.fog;
+        $('ctl-fog-val').textContent = DEFAULTS.fog.toFixed(2);
+        $('ctl-show-clouds').checked = DEFAULTS.showSun && true;
+        $('ctl-show-sun').checked = true;
+        $('ctl-auto-rotate').checked = true;
+        $('ctl-sky-top').value = DEFAULTS.skyTop;
+        $('ctl-sky-bottom').value = DEFAULTS.skyBottom;
+        state.seedOffset = 0;
+        applyAll();
+      });
+
+      // 面板折叠
+      $('panel-toggle').addEventListener('click', () => {
+        const panel = $('panel');
+        panel.classList.toggle('collapsed');
+        $('panel-toggle').textContent = panel.classList.contains('collapsed') ? '+' : '−';
+      });
+      $('panel-header').addEventListener('click', e => {
+        if (e.target === $('panel-header')) $('panel-toggle').click();
+      });
+    }
+
+    // ------------------------------------------------------------------
+    // 动画循环
+    // ------------------------------------------------------------------
+    const clock = new THREE.Clock();
+
+    function animate() {
+      const t = clock.getElapsedTime();
+
+      if (cloudRoot.visible) {
+        clouds.forEach(c => {
+          const x = ((c.baseX + t * c.baseSpeed * 1.4 * state.speed + 60) % 130) - 65;
+          // 边缘淡入淡出：|x| > 42 开始渐隐，|x| >= 60 完全透明，避免"瞬移消失"
+          const fade = Math.max(0, Math.min(1, (60 - Math.abs(x)) / 18));
+          c.group.position.x = x;
+          c.group.position.y = c.baseY + Math.sin(t * 0.22 + c.phase) * c.baseBob * 0.3 * state.bob;
+          c.group.position.z = c.baseZ + Math.cos(t * 0.16 + c.phase) * 0.8 * state.bob;
+          // 同步每个粒子的透明度
+          for (let i = 0; i < c.group.children.length; i++) {
+            const sp = c.group.children[i];
+            sp.material.opacity = sp.userData.baseOpacity * fade;
+          }
+        });
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+
+    // 初始化
+    updateSky(DEFAULTS.skyTop, DEFAULTS.skyBottom, DEFAULTS.fog);
+    rebuildClouds();
+    bindAll();
+    renderer.render(scene, camera);
+    document.getElementById('loading').classList.add('hide');
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    animate();
+  </script>
+</body>
+</html>
